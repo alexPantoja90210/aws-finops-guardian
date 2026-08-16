@@ -77,28 +77,4 @@ def main():
     if t3:
         h.append("<ul class='actions'>")
         for i, w in enumerate(t3, 1):
-            h.append(f"<li><span class='n'>{i}</span><span>{w['action']} — "
-                     f"{w['type'].replace('_',' ')} <b>{w['resource']}</b></span>"
-                     f"<span class='s'>save ~{money(w['est_monthly_usd'])}/mo</span></li>")
-        h.append("</ul>")
-    h.append("</div>")
-    h.append("<div class='card'><h2>Findings — RAID Register</h2>")
-    if waste:
-        h.append("<table><tr><th>Type</th><th>Resource</th><th>Detail</th><th>Est. $/mo</th><th>Action</th></tr>")
-        for w in waste:
-            h.append(f"<tr><td><span class='badge a'>{w['type'].replace('_',' ')}</span></td>"
-                     f"<td>{w['resource']}</td><td>{w['detail']}</td>"
-                     f"<td>{money(w['est_monthly_usd'])}</td><td>{w['action']}</td></tr>")
-        h.append("</table>")
-    else:
-        h.append("<div class='clean'>&#10003; No findings — all clear.</div>")
-    h.append("</div>")
-    h.append("<div class='foot'>Read-only &middot; authenticated by EC2 IAM role &middot; no keys on host</div>")
-    h.append("</div></body></html>")
-    with open("dashboard.html", "w") as f:
-        f.write("".join(h))
-    print("Wrote dashboard.html")
-
-if __name__ == "__main__":
-    main()
-PYEOF
+            h.append(f"<li><span
