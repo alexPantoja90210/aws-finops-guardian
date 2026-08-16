@@ -35,36 +35,44 @@ td{padding:12px;border-bottom:1px solid rgba(255,255,255,.05);font-family:ui-mon
 </style>
 """
 
-def money(x): return f"${x:,.2f}"
+def money(x):
+    return f"${x:,.2f}"
 
 def build_brief(r):
-    fc = r["forecast"]; waste = r["waste"]; total = r["waste_monthly_usd"]; health = r["health_score"]
-    p = [f"As of {r['generated_at'][:10]}, projected month-end spend is {money(fc['projected_eom'])} "
-         f"against a {money(fc['budget'])} budget ({fc['status']})."]
+    fc = r["forecast"]
+    waste = r["waste"]
+    total = r["waste_monthly_usd"]
+    health = r["health_score"]
+    p = []
+    p.append(f"As of {r['generated_at'][:10]}, projected month-end spend is {money(fc['projected_eom'])} against a {money(fc['budget'])} budget ({fc['status']}).")
     if waste:
-        p.append(f"The account is carrying {len(waste)} unused or idle resource(s) costing an "
-                 f"estimated {money(total)} per month.")
+        p.append(f"The account is carrying {len(waste)} unused or idle resource(s) costing an estimated {money(total)} per month.")
         top = sorted(waste, key=lambda w: w['est_monthly_usd'], reverse=True)[0]
-        p.append(f"The biggest single item is {top['type'].replace('_',' ')} ({top['resource']}) "
-                 f"at ~{money(top['est_monthly_usd'])}/mo — recommended action: {top['action'].lower()}.")
+        p.append(f"The biggest single item is {top['type'].replace('_',' ')} ({top['resource']}) at ~{money(top['est_monthly_usd'])}/mo - recommended action: {top['action'].lower()}.")
     else:
-        p.append("No idle or orphaned resources were detected — the account is clean.")
+        p.append("No idle or orphaned resources were detected - the account is clean.")
     p.append(f"Overall governance health score: {health}/100.")
     return " ".join(p)
 
 def main():
     with open("report.json") as f:
         r = json.load(f)
-    fc = r["forecast"]; waste = r["waste"]; total = r["waste_monthly_usd"]; health = r["health_score"]
+    fc = r["forecast"]
+    waste = r["waste"]
+    total = r["waste_monthly_usd"]
+    health = r["health_score"]
     budget_cls = "g" if fc["status"] == "OK" else "r"
     waste_cls = "g" if total == 0 else "a"
     health_cls = "g" if health >= 90 else ("a" if health >= 70 else "r")
+    updated = r["generated_at"][:16].replace("T", " ")
 
-    h = ["<!doctype html><html><head><meta charset='utf-8'>",
-         "<meta name='viewport' content='width=device-width, initial-scale=1'>",
-         "<title>FinOps Guardian</title>", CSS, "</head><body><div class='wrap'>"]
-    h.append(f"<div class='top'><span class='dot'></span><h1>AWS FinOps Guardian</h1>"
-             f"<span class='sub'>updated {r['generated_at'][:16].replace('T',' ')} UTC</span></div>")
+    h = []
+    h.append("<!doctype html><html><head><meta charset='utf-8'>")
+    h.append("<meta name='viewport' content='width=device-width, initial-scale=1'>")
+    h.append("<title>FinOps Guardian</title>")
+    h.append(CSS)
+    h.append("</head><body><div class='wrap'>")
+    h.append(f"<div class='top'><span class='dot'></span><h1>AWS FinOps Guardian</h1><span class='sub'>updated {updated} UTC</span></div>")
     h.append("<div class='kpis'>")
     h.append(f"<div class='kpi'><div class='l'>Projected EOM</div><div class='v c'>{money(fc['projected_eom'])}</div></div>")
     h.append(f"<div class='kpi'><div class='l'>Budget</div><div class='v {budget_cls}'>{fc['status']}</div></div>")
@@ -77,4 +85,26 @@ def main():
     if t3:
         h.append("<ul class='actions'>")
         for i, w in enumerate(t3, 1):
-            h.append(f"<li><span
+            typ = w['type'].replace('_', ' ')
+            h.append(f"<li><span class='n'>{i}</span><span>{w['action']} - {typ} <b>{w['resource']}</b></span><span class='s'>save ~{money(w['est_monthly_usd'])}/mo</span></li>")
+        h.append("</ul>")
+    h.append("</div>")
+    h.append("<div class='card'><h2>Findings - RAID Register</h2>")
+    if waste:
+        h.append("<table><tr><th>Type</th><th>Resource</th><th>Detail</th><th>Est. $/mo</th><th>Action</th></tr>")
+        for w in waste:
+            typ = w['type'].replace('_', ' ')
+            h.append(f"<tr><td><span class='badge a'>{typ}</span></td><td>{w['resource']}</td><td>{w['detail']}</td><td>{money(w['est_monthly_usd'])}</td><td>{w['action']}</td></tr>")
+        h.append("</table>")
+    else:
+        h.append("<div class='clean'>&#10003; No findings - all clear.</div>")
+    h.append("</div>")
+    h.append("<div class='foot'>Read-only &middot; authenticated by EC2 IAM role &middot; no keys on host</div>")
+    h.append("</div></body></html>")
+
+    with open("dashboard.html", "w") as f:
+        f.write("".join(h))
+    print("Wrote dashboard.html")
+
+if __name__ == "__main__":
+    main()
