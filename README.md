@@ -27,14 +27,14 @@ teams are paid to fix. This is a small, safe, governance-first take on it.
 
 ## Roadmap
 - [x] Phase 0 — Account, budget guardrail, IAM user, CLI, repo
-- [ ] Phase 1 — Provision EC2 + read-only IAM role + SSH
-- [ ] Phase 2 — Burn-rate forecast (Cost Explorer)
-- [ ] Phase 3 — Waste detection (idle EC2 / orphan EBS / unused EIP)
-- [ ] Phase 4 — AI executive brief + dashboard
-- [ ] Phase 5 — CI/CD (GitHub Actions) + scheduling
+- [x] Phase 1 — Provision EC2 + read-only IAM role + SSH
+- [x] Phase 2 — Burn-rate forecast (Cost Explorer)
+- [x] Phase 3 — Waste detection (idle EC2 / orphan EBS / unused EIP)
+- [x] Phase 4 — AI executive brief + dashboard
+- [x] Phase 5 — CI/CD (GitHub Actions) + scheduling
 
 ## Status
-🚧 In active development. Follow the build series on LinkedIn.
+✅ v1 complete — all 5 build phases shipped. Documented as a 5-part "Cloud, Hands-On" series on LinkedIn.
 
 ---
 *Author: Alejandro Pantoja — IT Program & Project Manager*
