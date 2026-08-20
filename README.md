@@ -1,21 +1,16 @@
 # AWS FinOps Guardian
 
-A lightweight, **read-only** cloud service that watches an AWS account,
-forecasts the end-of-month bill, catches waste (idle EC2, orphaned EBS,
-unused Elastic IPs), scores health, and produces an **AI executive brief**
-with a prioritized, dollar-ranked action list.
+A lightweight, **read-only** cloud service that watches an AWS account, forecasts the end-of-month bill, catches waste (idle EC2, orphaned EBS, unused Elastic IPs), scores health, and produces an AI executive brief with a prioritized, dollar-ranked action list.
 
 Built hands-on on the AWS free tier and documented as a LinkedIn series.
 
 ## Why
-Cloud cost sprawl + idle resources + zero visibility is exactly what FinOps
-teams are paid to fix. This is a small, safe, governance-first take on it.
+Cloud cost sprawl + idle resources + zero visibility is exactly what FinOps teams are paid to fix. This is a small, safe, **governance-first** take on it.
 
 ## Design principles
 - **Least privilege:** v1 is strictly read-only. It cannot modify anything.
-- **No secrets on the box:** the engine authenticates via an EC2 IAM role
-  (instance profile) — no access keys stored anywhere.
-- **Cost-safe:** a zero-spend budget alert guards the account; t2.micro only.
+- **No secrets on the box:** the engine authenticates via an EC2 IAM role (instance profile) — no access keys stored anywhere.
+- **Cost-safe:** a zero-spend budget alert guards the account; `t2.micro` only.
 
 ## Architecture (free tier)
 - **EC2 t2.micro** — hosts `guardian.py` (runs on a schedule)
@@ -34,7 +29,12 @@ teams are paid to fix. This is a small, safe, governance-first take on it.
 - [x] Phase 5 — CI/CD (GitHub Actions) + scheduling
 
 ## Status
-✅ v1 complete — all 5 build phases shipped. Documented as a 5-part "Cloud, Hands-On" series on LinkedIn.
+✅ **v1 complete** — all 5 build phases shipped. Documented as a 5-part "Cloud, Hands-On" series on LinkedIn.
+
+## Related project — the agentic layer
+The read-only `report.json` this Guardian produces is consumed by my **FinOps Copilot**, an agentic AI layer that turns the data into a prioritized, **human-approved** action plan (read-only → invariant enforced in code → eval gate → a human approves). It lives with a sibling **Ops Triage Copilot** in one repo — same safe pattern, two domains:
+
+➡️ **[github.com/alexPantoja90210/agentic-copilots](https://github.com/alexPantoja90210/agentic-copilots)** — `finops-copilot/` (this Guardian's agent) and `ops-triage/` (incident triage).
 
 ---
-*Author: Alejandro Pantoja — IT Program & Project Manager*
+**Author:** Alejandro Pantoja — IT Program & Project Manager
