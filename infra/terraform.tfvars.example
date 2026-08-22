@@ -1,0 +1,19 @@
+# Copia este archivo a terraform.tfvars y llena tus valores.
+# terraform.tfvars está en .gitignore — NUNCA lo commitees.
+
+aws_region                = "us-east-1"
+project_name              = "finops-guardian"
+instance_type             = "t2.micro"
+
+# Tu IP pública en /32. Averíguala con: curl -s https://checkip.amazonaws.com
+ssh_ingress_cidr          = "TU.IP.PUBLICA.AQUI/32"
+http_ingress_cidr         = "TU.IP.PUBLICA.AQUI/32"
+enable_ssh                = true
+
+# Nombre de un key pair EC2 que ya exista en tu cuenta.
+# Déjalo vacío para administrar la caja por SSM Session Manager.
+ssh_key_name              = ""
+
+# Email que recibe las alertas del budget.
+budget_notification_email = "alejandrob.pantoja@gmail.com"
+budget_limit_usd          = "1.0"
