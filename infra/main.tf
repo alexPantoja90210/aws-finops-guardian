@@ -1,16 +1,16 @@
 ###############################################################################
-# Stack del FinOps Guardian.
+# The FinOps Guardian stack.
 #
-# Principio del proyecto: el agente PROPONE, un humano APRUEBA. Ese principio
-# empieza aquí, en el IAM: la caja no puede modificar nada en la cuenta, ni
-# aunque alguien se lo pida. Solo lee.
+# Project principle: the agent PROPOSES, a human APPROVES. That principle
+# starts here, in IAM: the box cannot modify anything in the account, not even
+# if someone asks it to. It only reads.
 ###############################################################################
 
 data "aws_caller_identity" "current" {}
 
-# AMI Amazon Linux 2023 más reciente, resuelta en tiempo de plan.
-# Se busca por filtro en vez de hardcodear un id: los ids de AMI cambian por
-# región y quedan obsoletos.
+# Most recent Amazon Linux 2023 AMI, resolved at plan time.
+# Looked up by filter instead of hardcoding an id: AMI ids differ per region
+# and go stale.
 data "aws_ami" "al2023" {
   most_recent = true
   owners      = ["amazon"]
@@ -31,8 +31,8 @@ data "aws_vpc" "default" {
 }
 
 ###############################################################################
-# IAM — el corazón de esta tarea.
-# Este es el rol que IA-3 e IA-4 necesitan para leer datos reales de AWS.
+# IAM — the heart of this task.
+# This is the role IA-3 and IA-4 need in order to read real AWS data.
 ###############################################################################
 
 data "aws_iam_policy_document" "assume_role" {
@@ -49,15 +49,16 @@ data "aws_iam_policy_document" "assume_role" {
 
 resource "aws_iam_role" "guardian" {
   name               = "${var.project_name}-readonly-role"
-  description        = "Rol read-only del FinOps Guardian. Sin permisos de escritura por diseño (IA-7)."
+  description        = "Read-only role for the FinOps Guardian. No write permissions by design (IA-7)."
   assume_role_policy = data.aws_iam_policy_document.assume_role.json
 }
 
-# Permisos exactos que el Guardian necesita para producir report.json.
-# Cada bloque existe por una razón concreta; no hay comodines de conveniencia.
+# The exact permissions the Guardian needs in order to produce report.json.
+# Every block exists for a concrete reason; there are no wildcards of
+# convenience.
 data "aws_iam_policy_document" "guardian_readonly" {
 
-  # Costos y desperdicio. Es la materia prima del FinOps Copilot.
+  # Costs and waste. This is the raw material for the FinOps Copilot.
   statement {
     sid    = "CostExplorerRead"
     effect = "Allow"
@@ -76,8 +77,8 @@ data "aws_iam_policy_document" "guardian_readonly" {
     resources = ["*"]
   }
 
-  # Métricas de utilización. Alimenta tanto el ranking de waste del FinOps
-  # Copilot como las señales del Ops Triage (IA-4).
+  # Utilization metrics. Feeds both the FinOps Copilot's waste ranking and the
+  # Ops Triage signals (IA-4).
   statement {
     sid    = "CloudWatchRead"
     effect = "Allow"
@@ -91,7 +92,8 @@ data "aws_iam_policy_document" "guardian_readonly" {
     resources = ["*"]
   }
 
-  # Logs, para que el colector de IA-4 pueda leer eventos sin poder escribirlos.
+  # Logs, so the IA-4 collector can read events without being able to write
+  # them.
   statement {
     sid    = "CloudWatchLogsRead"
     effect = "Allow"
@@ -104,7 +106,8 @@ data "aws_iam_policy_document" "guardian_readonly" {
     resources = ["*"]
   }
 
-  # Inventario de recursos. Sin esto no se sabe qué está encendido y ocioso.
+  # Resource inventory. Without this there is no way to know what is running
+  # and idle.
   statement {
     sid    = "EC2Inventory"
     effect = "Allow"
@@ -119,7 +122,7 @@ data "aws_iam_policy_document" "guardian_readonly" {
     resources = ["*"]
   }
 
-  # Estado del presupuesto, para que el reporte sepa cuánto margen queda.
+  # Budget status, so the report knows how much headroom is left.
   statement {
     sid    = "BudgetsRead"
     effect = "Allow"
@@ -131,9 +134,9 @@ data "aws_iam_policy_document" "guardian_readonly" {
     resources = ["*"]
   }
 
-  # Cinturón y tirantes: aunque una policy futura concediera escritura por error,
-  # este Deny explícito gana. En IAM, un Deny nunca puede ser sobrescrito por un
-  # Allow. Es la garantía de que la caja jamás modificará la cuenta.
+  # Belt and braces: even if a future policy granted writes by mistake, this
+  # explicit Deny wins. In IAM, a Deny can never be overridden by an Allow. It
+  # is the guarantee that the box will never modify the account.
   statement {
     sid    = "DenyAllMutations"
     effect = "Deny"
@@ -158,7 +161,7 @@ data "aws_iam_policy_document" "guardian_readonly" {
 
 resource "aws_iam_policy" "guardian_readonly" {
   name        = "${var.project_name}-readonly-policy"
-  description = "Lectura de Cost Explorer, CloudWatch, EC2 y Budgets. Deny explícito sobre toda mutación."
+  description = "Read access to Cost Explorer, CloudWatch, EC2 and Budgets. Explicit Deny on every mutation."
   policy      = data.aws_iam_policy_document.guardian_readonly.json
 }
 
@@ -167,37 +170,36 @@ resource "aws_iam_role_policy_attachment" "guardian_readonly" {
   policy_arn = aws_iam_policy.guardian_readonly.arn
 }
 
-# Permite administrar la caja por SSM Session Manager, sin abrir SSH ni guardar
-# llaves. Es política administrada de AWS, de solo operación de sesión.
+# Allows administering the box through SSM Session Manager, without opening SSH
+# or storing keys. It is an AWS managed policy, limited to session operation.
 resource "aws_iam_role_policy_attachment" "ssm_core" {
   role       = aws_iam_role.guardian.name
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
-# El instance profile es lo que hace que NO haya llaves en la caja: la instancia
-# obtiene credenciales temporales rotadas por AWS.
+# The instance profile is what makes sure there are NO keys on the box: the
+# instance obtains temporary credentials rotated by AWS.
 resource "aws_iam_instance_profile" "guardian" {
   name = "${var.project_name}-instance-profile"
   role = aws_iam_role.guardian.name
 }
 
 ###############################################################################
-# Red — Security Group mínimo.
+# Network — minimal Security Group.
 ###############################################################################
 
 resource "aws_security_group" "guardian" {
-  name        = "${var.project_name}-sg"
-  # OJO: la API de EC2 rechaza cualquier carácter fuera de ASCII en
-  # GroupDescription. No es capricho de estilo: un acento aquí hace fallar el
-  # apply con InvalidParameterValue. Por eso esta descripcion va en ASCII plano
-  # mientras los comentarios del archivo siguen en español.
+  name = "${var.project_name}-sg"
+  # NOTE: the EC2 API rejects any character outside ASCII in GroupDescription.
+  # This is not a style preference: a single accented character here fails the
+  # apply with InvalidParameterValue. Keep this string plain ASCII (IA-23).
   description = "Minimal access for the Guardian. Egress open to AWS APIs; ingress restricted to a single operator IP."
   vpc_id      = data.aws_vpc.default.id
 
   lifecycle {
     precondition {
       condition     = !var.enable_ssh || var.ssh_ingress_cidr != ""
-      error_message = "enable_ssh está en true pero ssh_ingress_cidr está vacío. Declara tu IP en /32 o pon enable_ssh = false."
+      error_message = "enable_ssh is true but ssh_ingress_cidr is empty. Declare your IP as a /32, or set enable_ssh = false."
     }
   }
 }
@@ -206,7 +208,7 @@ resource "aws_vpc_security_group_ingress_rule" "ssh" {
   count = var.enable_ssh && var.ssh_ingress_cidr != "" ? 1 : 0
 
   security_group_id = aws_security_group.guardian.id
-  description       = "SSH solo desde la IP del operador"
+  description       = "SSH from the operator IP only"
   cidr_ipv4         = var.ssh_ingress_cidr
   from_port         = 22
   to_port           = 22
@@ -217,25 +219,25 @@ resource "aws_vpc_security_group_ingress_rule" "http" {
   count = var.http_ingress_cidr != "" ? 1 : 0
 
   security_group_id = aws_security_group.guardian.id
-  description       = "nginx sirviendo report.json, solo desde la IP del operador"
+  description       = "nginx serving report.json, from the operator IP only"
   cidr_ipv4         = var.http_ingress_cidr
   from_port         = 80
   to_port           = 80
   ip_protocol       = "tcp"
 }
 
-# Salida abierta: la instancia necesita alcanzar los endpoints de Cost Explorer,
-# CloudWatch y EC2. Restringirla exigiría VPC endpoints, que cuestan dinero y
-# romperían la premisa zero-spend.
+# Egress left open: the instance needs to reach the Cost Explorer, CloudWatch
+# and EC2 endpoints. Restricting it would require VPC endpoints, which cost
+# money and would break the zero-spend premise.
 resource "aws_vpc_security_group_egress_rule" "all" {
   security_group_id = aws_security_group.guardian.id
-  description       = "Salida a las APIs de AWS"
+  description       = "Egress to the AWS APIs"
   cidr_ipv4         = "0.0.0.0/0"
   ip_protocol       = "-1"
 }
 
 ###############################################################################
-# Cómputo.
+# Compute.
 ###############################################################################
 
 resource "aws_instance" "guardian" {
@@ -246,9 +248,9 @@ resource "aws_instance" "guardian" {
   iam_instance_profile   = aws_iam_instance_profile.guardian.name
   vpc_security_group_ids = [aws_security_group.guardian.id]
 
-  # IMDSv2 obligatorio: cierra el vector clásico de robo de credenciales del
-  # rol vía SSRF. Con un rol de solo lectura el daño sería menor, pero la
-  # postura correcta no depende de que el blast radius sea chico.
+  # IMDSv2 required: closes the classic SSRF path to stealing the role's
+  # credentials. With a read-only role the damage would be limited, but the
+  # right posture should not depend on the blast radius being small.
   metadata_options {
     http_endpoint               = "enabled"
     http_tokens                 = "required"
@@ -271,7 +273,7 @@ resource "aws_instance" "guardian" {
 }
 
 ###############################################################################
-# Budget zero-spend — el guard que hace seguro hacer apply.
+# Zero-spend budget — the guard that makes it safe to run apply.
 ###############################################################################
 
 resource "aws_budgets_budget" "zero_spend" {
@@ -283,15 +285,16 @@ resource "aws_budgets_budget" "zero_spend" {
   limit_unit   = "USD"
   time_unit    = "MONTHLY"
 
-  # Bajo el Free Plan de AWS los créditos absorben el consumo, así que el costo
-  # NETO sería cero y este budget no alertaría nunca — el guardián de costos
-  # ciego justo en la cuenta que debe vigilar. Excluir los créditos hace que
-  # mida el consumo BRUTO, que es la señal real de cuánto se está quemando.
+  # Under the AWS Free Plan, credits absorb consumption, so the NET cost would
+  # be zero and this budget would never alert — the cost guardian, blind in
+  # exactly the account it is meant to watch. Excluding credits makes it
+  # measure GROSS consumption, which is the real signal of how fast the
+  # balance is burning.
   cost_types {
     include_credit = false
   }
 
-  # Avisa cuando el gasto REAL cruza el umbral.
+  # Warns when ACTUAL spend crosses the threshold.
   notification {
     comparison_operator        = "GREATER_THAN"
     threshold                  = var.budget_alert_threshold_percent
@@ -300,8 +303,8 @@ resource "aws_budgets_budget" "zero_spend" {
     subscriber_email_addresses = [var.budget_notification_email]
   }
 
-  # Y avisa también cuando la PROYECCIÓN del mes lo cruzaría: llega la alerta
-  # antes de que el dinero se gaste, no después.
+  # And warns when the month's FORECAST would cross it: the alert arrives
+  # before the money is spent, not after.
   notification {
     comparison_operator        = "GREATER_THAN"
     threshold                  = var.budget_alert_threshold_percent

@@ -1,109 +1,114 @@
 ###############################################################################
-# Variables del stack Guardian.
-# Ningún valor sensible vive aquí. Los valores reales van en terraform.tfvars,
-# que está en .gitignore y nunca se commitea.
+# Variables for the Guardian stack.
+# No sensitive value lives here. Real values go in terraform.tfvars, which is
+# in .gitignore and is never committed.
 ###############################################################################
 
 variable "aws_region" {
-  description = "Región donde vive el Guardian. Free tier disponible en todas las estándar."
+  description = "Region where the Guardian lives. Free tier is available in all standard regions."
   type        = string
   default     = "us-east-1"
 }
 
 variable "project_name" {
-  description = "Prefijo de nombres y tags para todos los recursos del stack."
+  description = "Name and tag prefix for every resource in the stack."
   type        = string
   default     = "finops-guardian"
 
   validation {
     condition     = can(regex("^[a-z0-9-]{3,32}$", var.project_name))
-    error_message = "project_name debe ser minúsculas, dígitos o guiones, de 3 a 32 caracteres."
+    error_message = "project_name must be lowercase letters, digits or hyphens, 3 to 32 characters long."
   }
 }
 
 variable "instance_type" {
-  description = "Tipo de instancia EC2. Se restringe a free tier a propósito: este proyecto no debe generar gasto."
+  description = "EC2 instance type. Restricted to free tier on purpose: this project must not generate spend."
   type        = string
   default     = "t3.micro"
 
   validation {
     condition     = contains(["t2.micro", "t3.micro"], var.instance_type)
-    error_message = "Solo se permiten tipos de free tier (t2.micro o t3.micro). Cambiar esto rompe la premisa zero-spend del proyecto."
+    error_message = "Only free-tier types are allowed (t2.micro or t3.micro). Changing this breaks the project's zero-spend premise."
   }
 }
 
 variable "ssh_ingress_cidr" {
   description = <<-EOT
-    CIDR autorizado para SSH. Debe ser la IP pública de Alejandro en /32.
-    Se deja vacío por defecto a propósito: obliga a declararlo y evita
-    que un descuido abra el puerto 22 al mundo.
+    CIDR allowed to reach SSH. It must be the operator's public IP as a /32.
+    It is left empty by default on purpose: that forces an explicit decision
+    and prevents an oversight from opening port 22 to the world.
   EOT
   type        = string
   default     = ""
 
   validation {
     condition     = var.ssh_ingress_cidr == "" || can(cidrhost(var.ssh_ingress_cidr, 0))
-    error_message = "ssh_ingress_cidr debe ser un CIDR válido, por ejemplo 189.203.44.17/32."
+    error_message = "ssh_ingress_cidr must be a valid CIDR, for example 203.0.113.17/32."
   }
 
   validation {
     condition     = var.ssh_ingress_cidr != "0.0.0.0/0"
-    error_message = "0.0.0.0/0 abre SSH a todo internet. Usa tu IP en /32."
+    error_message = "0.0.0.0/0 opens SSH to the whole internet. Use your own IP as a /32."
   }
 }
 
 variable "enable_ssh" {
-  description = "Si es false, el Security Group no abre el puerto 22 en absoluto. Preferible si administras la caja por SSM."
+  description = <<-EOT
+    When false, the Security Group does not open port 22 at all.
+    Defaults to false on purpose: the box is administered through SSM Session
+    Manager, which needs no inbound port and no private key to guard. Set it to
+    true only if you also provide ssh_ingress_cidr and ssh_key_name.
+  EOT
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "http_ingress_cidr" {
-  description = "CIDR autorizado para leer el report.json por nginx. Por defecto, misma restricción que SSH."
+  description = "CIDR allowed to read report.json over nginx. By default, the same restriction as SSH."
   type        = string
   default     = ""
 }
 
 variable "budget_notification_email" {
-  description = "Email que recibe la alerta del budget zero-spend. Sin esto el guard no avisa a nadie."
+  description = "Email that receives the zero-spend budget alert. Without it the guard warns nobody."
   type        = string
 
   validation {
     condition     = can(regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$", var.budget_notification_email))
-    error_message = "budget_notification_email debe ser una dirección de correo válida."
+    error_message = "budget_notification_email must be a valid email address."
   }
 }
 
 variable "budget_limit_usd" {
-  description = "Techo del presupuesto mensual en USD. 1.00 actúa como zero-spend: cualquier gasto real dispara la alerta."
+  description = "Monthly budget ceiling in USD. 1.00 acts as zero-spend: any real charge trips the alert."
   type        = string
   default     = "1.0"
 }
 
 variable "budget_alert_threshold_percent" {
-  description = "Porcentaje del techo que dispara la notificación. 1% de 1 USD avisa prácticamente al primer centavo."
+  description = "Percentage of the ceiling that triggers the notification. 1% of 1 USD warns at practically the first cent."
   type        = number
   default     = 1
 
   validation {
     condition     = var.budget_alert_threshold_percent > 0 && var.budget_alert_threshold_percent <= 100
-    error_message = "El umbral debe estar entre 1 y 100."
+    error_message = "The threshold must be between 1 and 100."
   }
 }
 
 variable "root_volume_size_gb" {
-  description = "Tamaño del volumen raíz. El free tier cubre hasta 30 GB de EBS gp3 al mes."
+  description = "Root volume size. The free tier covers up to 30 GB of gp3 EBS per month."
   type        = number
   default     = 8
 
   validation {
     condition     = var.root_volume_size_gb >= 8 && var.root_volume_size_gb <= 30
-    error_message = "Mantente entre 8 y 30 GB para no salir del free tier de EBS."
+    error_message = "Stay between 8 and 30 GB to remain inside the EBS free tier."
   }
 }
 
 variable "ssh_key_name" {
-  description = "Nombre de un key pair EC2 ya existente. Vacío = sin key pair (acceso por SSM Session Manager)."
+  description = "Name of an existing EC2 key pair. Empty = no key pair (access through SSM Session Manager)."
   type        = string
   default     = ""
 }

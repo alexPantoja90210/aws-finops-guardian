@@ -1,7 +1,7 @@
 ###############################################################################
 # aws-finops-guardian / infra
-# Pin de versiones. Se fija Terraform y el provider AWS para que el plan de hoy
-# sea el mismo plan de dentro de seis meses.
+# Version pinning. Terraform and the AWS provider are pinned so that today's
+# plan is the same plan six months from now.
 ###############################################################################
 
 terraform {
@@ -28,8 +28,8 @@ provider "aws" {
   }
 }
 
-# AWS Budgets y Cost Explorer son servicios globales anclados a us-east-1.
-# Este alias existe para eso; no crea recursos fuera de esa necesidad.
+# AWS Budgets and Cost Explorer are global services anchored to us-east-1.
+# This alias exists for that reason only; it creates nothing beyond that need.
 provider "aws" {
   alias  = "us_east_1"
   region = "us-east-1"
