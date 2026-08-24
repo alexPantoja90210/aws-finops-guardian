@@ -24,7 +24,7 @@ variable "project_name" {
 variable "instance_type" {
   description = "Tipo de instancia EC2. Se restringe a free tier a propósito: este proyecto no debe generar gasto."
   type        = string
-  default     = "t2.micro"
+  default     = "t3.micro"
 
   validation {
     condition     = contains(["t2.micro", "t3.micro"], var.instance_type)
