@@ -17,3 +17,12 @@ ssh_key_name              = ""
 # Email that receives the budget alerts.
 budget_notification_email = "you@example.com"
 budget_limit_usd          = "1.0"
+
+# --- IA-45 pilot -------------------------------------------------------------
+# Pin the AMI before enabling the pilot. Use the id the instance is ALREADY
+# running (terraform show | Select-String "ami ="), not the newest one, unless
+# you have decided to rebuild the box on purpose.
+# pinned_ami_id = "ami-0123456789abcdef0"
+#
+# pilot_enabled                = true
+# pilot_injector_principal_arn = "arn:aws:iam::<account>:user/<you>"

@@ -112,3 +112,69 @@ variable "ssh_key_name" {
   type        = string
   default     = ""
 }
+
+###############################################################################
+# IA-45 pilot. Everything below creates nothing while pilot_enabled is false.
+###############################################################################
+
+variable "pilot_enabled" {
+  description = <<-EOT
+    Switches on the IA-45 pilot: the scoped injector role and the Pilot tag on
+    the target instance. Defaults to false so that the pilot is an explicit act
+    with a visible plan, never a side effect of running apply.
+  EOT
+  type        = bool
+  default     = false
+}
+
+variable "pilot_injector_principal_arn" {
+  description = <<-EOT
+    ARN of the IAM principal allowed to assume the injector role — the
+    operator's own user or role. Empty by default and supplied through
+    terraform.tfvars, which is gitignored, so no account identifier reaches the
+    repository.
+  EOT
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.pilot_injector_principal_arn == "" || can(regex("^arn:aws:iam::[0-9]{12}:(user|role)/.+$", var.pilot_injector_principal_arn))
+    error_message = "pilot_injector_principal_arn must be an IAM user or role ARN, for example arn:aws:iam::123456789012:user/alex."
+  }
+}
+
+variable "pilot_tag_value" {
+  description = "Value of the Pilot tag that both marks the target and scopes the injector role's permission."
+  type        = string
+  default     = "IA-45"
+}
+
+variable "pinned_ami_id" {
+  description = <<-EOT
+    Pins the instance to one AMI id. Empty (the default) keeps the original
+    behaviour: data.aws_ami.al2023 resolves the most recent Amazon Linux 2023
+    image at plan time.
+
+    That default is right for a long-lived box and wrong for an experiment.
+    Amazon publishes AL2023 images continuously, so "most recent" changes under
+    you: on 1 Sep 2026 a plan that was meant to flip one credit setting came
+    back as "1 to add, 1 to destroy" because the AMI had moved on since 24 Aug.
+    Rebuilding the target in the middle of the IA-45 pilot would reset its
+    CloudWatch history and change the instance id the ground-truth log points
+    at — the labels would survive, but they would name an instance that no
+    longer exists.
+
+    So: unpinned for normal operation, where a deliberate rebuild onto a
+    patched image is a feature; pinned for the duration of the pilot, where a
+    stable target is the whole point. The pin lives in terraform.tfvars, and
+    the precondition on aws_instance.guardian refuses to run the pilot without
+    one.
+  EOT
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.pinned_ami_id == "" || can(regex("^ami-[0-9a-f]{8,17}$", var.pinned_ami_id))
+    error_message = "pinned_ami_id must be an AMI id such as ami-0123456789abcdef0, or empty to track the latest."
+  }
+}

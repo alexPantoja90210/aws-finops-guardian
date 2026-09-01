@@ -51,3 +51,17 @@ output "account_id" {
   value       = data.aws_caller_identity.current.account_id
   sensitive   = true
 }
+
+###############################################################################
+# IA-45 pilot
+###############################################################################
+
+output "pilot_injector_role_arn" {
+  description = "ARN of the scoped injector role. Null while the pilot is off."
+  value       = var.pilot_enabled ? aws_iam_role.pilot_injector[0].arn : null
+}
+
+output "pilot_target_instance_id" {
+  description = "The one instance the injector may start and stop. Null while the pilot is off."
+  value       = var.pilot_enabled ? aws_instance.guardian.id : null
+}

@@ -9,3 +9,11 @@ crash.log
 tfplan
 *.tfplan
 plan-*.txt
+
+# IA-46. Two gaps found before committing:
+#  - saved plans named tfplan-<issue> matched neither "tfplan" nor "*.tfplan",
+#    and a binary plan carries the account id, KMS key ARN, subnet and SG ids.
+#  - *.tfvars does not match terraform.tfvars.bak, which carries the operator IP.
+tfplan-*
+*.bak
+*.pre-*

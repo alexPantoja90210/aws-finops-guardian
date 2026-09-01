@@ -241,7 +241,9 @@ resource "aws_vpc_security_group_egress_rule" "all" {
 ###############################################################################
 
 resource "aws_instance" "guardian" {
-  ami           = data.aws_ami.al2023.id
+  # Pinned when var.pinned_ami_id is set, latest AL2023 otherwise.
+  # See the variable's description for why the pilot requires the pin.
+  ami           = var.pinned_ami_id != "" ? var.pinned_ami_id : data.aws_ami.al2023.id
   instance_type = var.instance_type
   key_name      = var.ssh_key_name != "" ? var.ssh_key_name : null
 
@@ -266,9 +268,41 @@ resource "aws_instance" "guardian" {
 
   monitoring = false
 
-  tags = {
-    Name = "${var.project_name}-ec2"
-    Role = "guardian-collector"
+  # IA-46. Set EXPLICITLY, not left to the AWS default.
+  #
+  # t3 instances default to "unlimited", and this one was running that way:
+  # the state showed credit_specification = unlimited with no block in this
+  # file to have chosen it. Under unlimited, sustained CPU is billed as surplus
+  # credits instead of draining the balance, which does two harmful things at
+  # once for this account:
+  #   - the CPUCreditBalance signal the pilot depends on never appears, and
+  #   - load generated on purpose turns into real spend, against the very
+  #     zero-spend premise the budget below exists to protect (D4).
+  # "standard" makes the burst budget finite and observable, which is what both
+  # the guardian and the pilot actually want.
+  credit_specification {
+    cpu_credits = "standard"
+  }
+
+  tags = merge(
+    {
+      Name = "${var.project_name}-ec2"
+      Role = "guardian-collector"
+    },
+    # Only while the pilot is switched on. The IAM grant in pilot.tf is
+    # conditioned on this tag, so removing the tag revokes the ability to
+    # start or stop this instance without touching the role.
+    var.pilot_enabled ? { Pilot = var.pilot_tag_value } : {}
+  )
+
+  lifecycle {
+    # An experiment whose target any plan can rebuild is not a controlled
+    # experiment. Fail here, at plan time, rather than discovering mid-pilot
+    # that the instance id in the ground-truth log refers to a dead machine.
+    precondition {
+      condition     = !var.pilot_enabled || var.pinned_ami_id != ""
+      error_message = "pilot_enabled is true but pinned_ami_id is empty. The AL2023 data source tracks the most recent image, so any plan can replace the pilot target. Set pinned_ami_id in terraform.tfvars to the AMI the instance is running before enabling the pilot."
+    }
   }
 }
 
