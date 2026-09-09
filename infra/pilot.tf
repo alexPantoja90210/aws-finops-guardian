@@ -15,6 +15,47 @@
 
 locals {
   pilot_count = var.pilot_enabled ? 1 : 0
+
+  # ONE list, used by both the Allow and the Deny below.
+  #
+  # These were two hand-maintained lists until the first dry run of inject.py,
+  # which failed on ec2:DescribeInstanceCreditSpecifications: the role could not
+  # read the credit mode that the harness checks BEFORE generating CPU load, so
+  # the policy was blocking the harness's own safety check. A second gap was
+  # found while fixing it — ssm:SendCommand was missing too, which the dry run
+  # would never have reached and a real F1 would have hit mid-window, with the
+  # ground-truth label already written.
+  #
+  # The defect was drift between two lists that had to agree. One list cannot
+  # drift from itself.
+  pilot_injector_write_actions = [
+    "ec2:StartInstances",
+    "ec2:StopInstances",
+  ]
+
+  pilot_injector_read_actions = [
+    "ec2:DescribeInstances",
+    "ec2:DescribeInstanceStatus",
+    "ec2:DescribeInstanceCreditSpecifications",
+    "ec2:DescribeTags",
+    "cloudwatch:ListMetrics",
+    "cloudwatch:GetMetricStatistics",
+    "cloudwatch:GetMetricData",
+    "ssm:GetCommandInvocation",
+    "ssm:ListCommandInvocations",
+  ]
+
+  # Running the load generator. Scoped to the target instance and to the one
+  # document used, not to SSM at large.
+  pilot_injector_ssm_actions = [
+    "ssm:SendCommand",
+  ]
+
+  pilot_injector_all_actions = concat(
+    local.pilot_injector_write_actions,
+    local.pilot_injector_read_actions,
+    local.pilot_injector_ssm_actions,
+  )
 }
 
 # Who may assume the injector role.
@@ -31,6 +72,19 @@ locals {
 # principal. Then, and only then, the underlying role or user ARN has to be
 # named explicitly.
 locals {
+  # IA-55. The chain adds instances, so the grant can no longer name one id.
+  #
+  # It is widened to "any instance in this account" ONLY in the resource field:
+  # every statement that uses it also carries the Pilot tag condition, and that
+  # condition is what actually scopes the permission. Proven in IA-46 by
+  # removing the tag from the target and watching the same role, same action,
+  # same ARN be refused.
+  #
+  # The alternative -- listing three ids -- would drift the moment an instance
+  # is replaced, and a permission that silently stops matching is worse than one
+  # whose scope is stated as a rule.
+  pilot_target_arn = "arn:aws:ec2:${var.aws_region}:${data.aws_caller_identity.current.account_id}:instance/*"
+
   pilot_trust_principal = (
     var.pilot_injector_principal_arn != ""
     ? var.pilot_injector_principal_arn
@@ -67,13 +121,26 @@ data "aws_iam_policy_document" "pilot_injector" {
   count = local.pilot_count
 
   statement {
-    sid    = "StartStopThePilotTargetOnly"
-    effect = "Allow"
-    actions = [
-      "ec2:StartInstances",
-      "ec2:StopInstances",
-    ]
-    resources = ["arn:aws:ec2:${var.aws_region}:${data.aws_caller_identity.current.account_id}:instance/${aws_instance.guardian.id}"]
+    sid       = "StartStopThePilotTargetOnly"
+    effect    = "Allow"
+    actions   = local.pilot_injector_write_actions
+    resources = [local.pilot_target_arn]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:ResourceTag/Pilot"
+      values   = [var.pilot_tag_value]
+    }
+  }
+
+  # Running the busy loop that produces the CPU fault. Two resources: the one
+  # instance, and the one document. SendCommand needs both, and granting it on
+  # "*" would hand the role a shell on anything the account ever runs.
+  statement {
+    sid       = "RunTheLoadGeneratorOnTheTargetOnly"
+    effect    = "Allow"
+    actions   = local.pilot_injector_ssm_actions
+    resources = [local.pilot_target_arn]
 
     condition {
       test     = "StringEquals"
@@ -83,16 +150,19 @@ data "aws_iam_policy_document" "pilot_injector" {
   }
 
   statement {
-    sid    = "ReadOnlyVisibility"
-    effect = "Allow"
-    actions = [
-      "ec2:DescribeInstances",
-      "ec2:DescribeInstanceStatus",
-      "ec2:DescribeTags",
-      "cloudwatch:ListMetrics",
-      "cloudwatch:GetMetricStatistics",
-      "cloudwatch:GetMetricData",
-    ]
+    sid       = "TheOneDocumentTheLoadGeneratorUses"
+    effect    = "Allow"
+    actions   = local.pilot_injector_ssm_actions
+    resources = ["arn:aws:ssm:${var.aws_region}::document/AWS-RunShellScript"]
+  }
+
+  # Describe and metric-read APIs do not support resource-level permissions:
+  # AWS evaluates them against "*" or not at all. That is a property of the
+  # API, not a shortcut, and it is why the deny below carries the weight.
+  statement {
+    sid       = "ReadOnlyVisibility"
+    effect    = "Allow"
+    actions   = local.pilot_injector_read_actions
     resources = ["*"]
   }
 
@@ -101,19 +171,10 @@ data "aws_iam_policy_document" "pilot_injector" {
   # this role by mistake tomorrow still cannot widen it. An Allow can never
   # override a Deny.
   statement {
-    sid    = "DenyEverythingElse"
-    effect = "Deny"
-    not_actions = [
-      "ec2:StartInstances",
-      "ec2:StopInstances",
-      "ec2:DescribeInstances",
-      "ec2:DescribeInstanceStatus",
-      "ec2:DescribeTags",
-      "cloudwatch:ListMetrics",
-      "cloudwatch:GetMetricStatistics",
-      "cloudwatch:GetMetricData",
-    ]
-    resources = ["*"]
+    sid         = "DenyEverythingElse"
+    effect      = "Deny"
+    not_actions = local.pilot_injector_all_actions
+    resources   = ["*"]
   }
 }
 

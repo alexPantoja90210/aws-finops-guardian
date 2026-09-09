@@ -26,3 +26,8 @@ budget_limit_usd          = "1.0"
 #
 # pilot_enabled                = true
 # pilot_injector_principal_arn = "arn:aws:iam::<account>:user/<you>"
+
+# --- IA-55 dependency chain --------------------------------------------------
+# Adds two instances (app, web) and tags the existing target as db.
+# chain_enabled = true
+# chain_port    = 8080

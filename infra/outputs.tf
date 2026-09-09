@@ -65,3 +65,30 @@ output "pilot_target_instance_id" {
   description = "The one instance the injector may start and stop. Null while the pilot is off."
   value       = var.pilot_enabled ? aws_instance.guardian.id : null
 }
+
+###############################################################################
+# IA-55 dependency chain
+###############################################################################
+
+output "chain_topology" {
+  description = <<-EOT
+    The declared graph, and the private addresses that make it real. This is the
+    single source the bootstrap and the pilot's arm B both read, so the graph
+    handed to the agent cannot drift from the graph that actually exists.
+  EOT
+  value = var.chain_enabled ? {
+    port = var.chain_port
+    nodes = {
+      db = { instance_id = aws_instance.guardian.id,
+        private_ip = aws_instance.guardian.private_ip,
+      depends_on_node = null }
+      app = { instance_id = aws_instance.chain["app"].id,
+        private_ip = aws_instance.chain["app"].private_ip,
+      depends_on_node = "db" }
+      web = { instance_id = aws_instance.chain["web"].id,
+        private_ip = aws_instance.chain["web"].private_ip,
+      depends_on_node = "app" }
+    }
+  } : null
+  sensitive = true
+}

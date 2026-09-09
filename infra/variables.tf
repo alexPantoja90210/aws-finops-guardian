@@ -178,3 +178,30 @@ variable "pinned_ami_id" {
     error_message = "pinned_ami_id must be an AMI id such as ami-0123456789abcdef0, or empty to track the latest."
   }
 }
+
+variable "chain_enabled" {
+  description = <<-EOT
+    Switches on the IA-55 dependency chain: two extra instances (app, web), the
+    intra-group ingress rule they need, and the ChainRole tags.
+
+    Off by default. Three running t3.micro cost about $0.78/day against verified
+    prices, so turning this on is an explicit act with a visible plan, never a
+    side effect.
+  EOT
+  type        = bool
+  default     = false
+}
+
+variable "chain_port" {
+  description = <<-EOT
+    TCP port the chain nodes serve their payload on. Reachable only from the
+    security group itself — never from the internet.
+  EOT
+  type        = number
+  default     = 8080
+
+  validation {
+    condition     = var.chain_port > 1024 && var.chain_port < 65536
+    error_message = "Use an unprivileged port so the payload server need not run as root."
+  }
+}
