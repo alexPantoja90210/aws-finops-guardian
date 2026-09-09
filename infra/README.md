@@ -40,12 +40,39 @@ terraform apply tfplan
 
 `plan` creates nothing and costs nothing. **Always review it before applying.**
 
+After applying, run `run_verify_on_box.ps1` — the plan is not the evidence.
+
 ### What to check in the plan
 
-1. `aws_iam_policy.guardian_readonly` — that no statement with `Effect: "Allow"` contains `Put*`, `Create*`, `Delete*`, `Modify*` or `Terminate*` actions.
+1. `aws_iam_policy.guardian_readonly` — that no statement with `Effect: "Allow"` contains `Put*`, `Create*`, `Delete*`, `Modify*` or `Terminate*` actions, and that `DenyEverythingOutsideTheReadSet` carries `NotAction` rather than a list of actions.
+
+   Reading the plan verifies **form**. It does not verify that AWS refuses the call — see *Proving it, from the account* below.
 2. `cidr_ipv4` in the ingress rules — it must be your `/32`. If you see `0.0.0.0/0`, stop.
 3. `aws_budgets_budget.zero_spend` — two `notification` blocks (`ACTUAL` and `FORECASTED`) and `cost_types.include_credit = false`.
 4. The final count — all `to add`. Any unexpected `destroy` means the state is not clean.
+
+### Proving it, from the account
+
+`terraform validate` verifies form. `terraform plan` verifies the diff against state. **Only the account verifies that AWS behaves**, and three defects in this repo — IA-23, IA-24 and the immutability of policy descriptions — all lived outside the reach of the first two.
+
+```bash
+./run_verify_on_box.ps1        # ships it to the box and prints the result
+```
+
+It runs on the instance rather than from a laptop, and that is not a convenience: the role is trusted by `ec2.amazonaws.com` alone and cannot be assumed by a human. Making it assumable so the check could run locally would weaken the control being checked. On the box the ambient credentials *are* the role — the real principal, in the real place.
+
+It is bash against the preinstalled AWS CLI and installs nothing. The first version needed `boto3`, which is absent from this AMI; installing a package onto the machine under audit would mean mutating the subject of the test.
+
+Every negative probe is a delete of a resource that does not exist, or an EC2 dry run, so nothing can be created or destroyed by running it. An authorised probe returns "does not exist" instead of `AccessDenied`, and that is reported as a failure of the script.
+
+It runs two suites and both must pass:
+
+* **Negative** — ten mutations across EC2, IAM, S3, RDS, Lambda, DynamoDB, CloudWatch and Budgets must each come back `AccessDenied`. EC2 uses `DryRun=True`; the rest pass deliberately invalid parameters, because AWS authorises before it validates — so a call that *was* permitted fails on validation and is reported as **not denied** instead of mutating anything.
+* **Positive** — the five reads `guardian.py` actually performs must still work.
+
+The positive suite is not decoration. A policy that denied everything would pass all ten negative checks while leaving the collector dead, and a suite that can only report good news is the defect this project has recorded thirteen times.
+
+This is what IA-15's success criterion 2 means by *verified at runtime, not just in the plan*.
 
 ### Reaching the instance
 
@@ -93,9 +120,11 @@ Each one exists for a concrete reason.
 
 ### An explicit `Deny` on top of not granting writes
 
-The policy could simply grant reads and nothing else. It also carries a `DenyAllMutations` statement that explicitly denies the destructive actions.
+The policy could simply grant reads and nothing else. It also carries a `DenyEverythingOutsideTheReadSet` statement, written with `NotAction`: it permits the enumerated reads plus the SSM management plane, and denies **everything else** — every AWS action that exists today and every one that ships next quarter.
 
 In IAM, **a `Deny` can never be overridden by an `Allow`**. If someone attaches a permissive policy to this role tomorrow by mistake, the role still cannot touch the account. The invariant does not depend on nobody making a mistake later — which is the only kind of invariant that holds.
+
+> **This paragraph was not true until 9 Sep 2026 (IA-75).** The statement used to be called `DenyAllMutations` and it named thirteen actions. `rds:*`, `lambda:*`, `dynamodb:*` and most of AWS were absent, so the promise above held for thirteen actions and no more. A list of forbidden actions is only ever as complete as the day it was written; `NotAction` inverts the problem so the list that needs maintaining is the one we already maintain — the reads.
 
 ### IMDSv2 required
 

@@ -134,26 +134,75 @@ data "aws_iam_policy_document" "guardian_readonly" {
     resources = ["*"]
   }
 
-  # Belt and braces: even if a future policy granted writes by mistake, this
-  # explicit Deny wins. In IAM, a Deny can never be overridden by an Allow. It
-  # is the guarantee that the box will never modify the account.
+  # The guarantee, written as the code enforces it: this role may perform the
+  # reads enumerated above, plus the SSM management-plane calls that Session
+  # Manager needs, and NOTHING ELSE. In IAM a Deny can never be overridden by
+  # an Allow, so this holds even if a broad policy is attached to the role by
+  # mistake tomorrow.
+  #
+  # Written as NotAction rather than as a list of forbidden actions, because a
+  # list of forbidden actions is only ever as complete as the day it was
+  # written. The previous version named thirteen actions and described itself
+  # as "every mutation"; rds:*, lambda:*, dynamodb:*, ec2:CreateTags and most
+  # of AWS were not on it. See IA-75.
+  #
+  # The SSM exception is real and is stated rather than hidden.
+  # AmazonSSMManagedInstanceCore is attached to this same role so the box can
+  # be administered without opening SSH, and it writes instance inventory and
+  # association status. Denying it would cut off access to the machine. The
+  # guarantee is therefore "no mutation of this account's resources, identity
+  # or billing" -- not "no write API call of any kind".
   statement {
-    sid    = "DenyAllMutations"
+    sid    = "DenyEverythingOutsideTheReadSet"
     effect = "Deny"
-    actions = [
-      "ec2:RunInstances",
-      "ec2:TerminateInstances",
-      "ec2:StopInstances",
-      "ec2:StartInstances",
-      "ec2:CreateVolume",
-      "ec2:DeleteVolume",
-      "ec2:ModifyInstanceAttribute",
-      "iam:*",
-      "budgets:ModifyBudget",
-      "budgets:DeleteBudget",
-      "budgets:CreateBudget",
-      "s3:PutObject",
-      "s3:DeleteObject",
+    not_actions = [
+      # Cost Explorer -- must mirror CostExplorerRead above.
+      "ce:GetCostAndUsage",
+      "ce:GetCostForecast",
+      "ce:GetDimensionValues",
+      "ce:GetReservationUtilization",
+      "ce:GetRightsizingRecommendation",
+      "ce:GetSavingsPlansUtilization",
+      "ce:GetTags",
+      "ce:GetUsageForecast",
+      "ce:DescribeCostCategoryDefinition",
+      "ce:ListCostCategoryDefinitions",
+
+      # CloudWatch metrics -- must mirror CloudWatchRead above.
+      "cloudwatch:GetMetricData",
+      "cloudwatch:GetMetricStatistics",
+      "cloudwatch:ListMetrics",
+      "cloudwatch:DescribeAlarms",
+      "cloudwatch:DescribeAlarmHistory",
+
+      # Logs -- must mirror CloudWatchLogsRead above.
+      "logs:DescribeLogGroups",
+      "logs:DescribeLogStreams",
+      "logs:FilterLogEvents",
+      "logs:GetLogEvents",
+
+      # EC2 inventory -- must mirror EC2Inventory above.
+      "ec2:DescribeInstances",
+      "ec2:DescribeVolumes",
+      "ec2:DescribeAddresses",
+      "ec2:DescribeSnapshots",
+      "ec2:DescribeRegions",
+      "ec2:DescribeInstanceTypes",
+
+      # Budgets -- must mirror BudgetsRead above.
+      "budgets:DescribeBudget",
+      "budgets:DescribeBudgets",
+      "budgets:ViewBudget",
+
+      # Session Manager. Without these the box becomes unreachable, since
+      # there is no SSH ingress by design.
+      "ssm:*",
+      "ssmmessages:*",
+      "ec2messages:*",
+
+      # Identity read-back, so verify_readonly.py can name the principal it is
+      # testing. Grants no access to anything.
+      "sts:GetCallerIdentity",
     ]
     resources = ["*"]
   }
@@ -161,7 +210,7 @@ data "aws_iam_policy_document" "guardian_readonly" {
 
 resource "aws_iam_policy" "guardian_readonly" {
   name        = "${var.project_name}-readonly-policy"
-  description = "Read access to Cost Explorer, CloudWatch, EC2 and Budgets. Explicit Deny on every mutation."
+  description = "Read access to Cost Explorer, CloudWatch, Logs, EC2 and Budgets, plus the SSM management plane. Everything outside that set is explicitly denied (NotAction). See IA-75."
   policy      = data.aws_iam_policy_document.guardian_readonly.json
 }
 
@@ -292,7 +341,13 @@ resource "aws_instance" "guardian" {
     # Only while the pilot is switched on. The IAM grant in pilot.tf is
     # conditioned on this tag, so removing the tag revokes the ability to
     # start or stop this instance without touching the role.
-    var.pilot_enabled ? { Pilot = var.pilot_tag_value } : {}
+    var.pilot_enabled ? { Pilot = var.pilot_tag_value } : {},
+    # IA-55. This instance is the tail of the dependency chain. A tag, not a
+    # rebuild: adding user_data here would replace the machine IA-46 pinned.
+    # DependsOn is deliberately absent on this node: it is the tail, and an
+    # empty tag would read as "depends on nothing declared yet" rather than
+    # "depends on nothing".
+    var.chain_enabled ? { ChainRole = "db" } : {}
   )
 
   lifecycle {
