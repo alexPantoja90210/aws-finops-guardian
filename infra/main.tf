@@ -200,7 +200,7 @@ data "aws_iam_policy_document" "guardian_readonly" {
       "ssmmessages:*",
       "ec2messages:*",
 
-      # Identity read-back, so verify_readonly.py can name the principal it is
+      # Identity read-back, so verify_readonly.sh can name the principal it is
       # testing. Grants no access to anything.
       "sts:GetCallerIdentity",
     ]
