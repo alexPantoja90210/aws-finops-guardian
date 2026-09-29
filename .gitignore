@@ -17,3 +17,8 @@ plan-*.txt
 tfplan-*
 *.bak
 *.pre-*
+
+# Python
+__pycache__/
+*.pyc
+report.json

@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: [ main ]
+  pull_request:
   workflow_dispatch:
 
 jobs:
@@ -17,11 +18,14 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install dependencies
-        run: pip install boto3
-
-      - name: Build check (compile scripts)
+      # No pip install. The suite reaches no network, needs no credentials and
+      # touches no account, and it stands in for boto3 if boto3 is absent.
+      - name: Compile check (the files parse, and nothing more than that)
         run: python -m py_compile src/guardian.py src/dashboard.py
 
-      - name: Result
-        run: echo "✅ Build OK — guardian & dashboard compile cleanly."
+      # This step is the point of the workflow. Until IA-199 to IA-206 are
+      # fixed it FAILS, and that is the correct state: the repository holds
+      # defects that are recorded, reproduced and not yet closed. A green
+      # badge over them would be the defect this project exists to find.
+      - name: Invariants
+        run: python test_invariants.py
