@@ -1,11 +1,19 @@
 # AWS FinOps Guardian
 
 A read-only cloud service that watches an AWS account, forecasts the end-of-month
-bill, catches waste (idle EC2, orphaned EBS, unused Elastic IPs), scores account
-health, and produces an AI executive brief with a prioritized, dollar-ranked
-action list.
+bill on **gross** consumption, reports idle and undeclared resources, scores
+account health, and produces a dollar-ranked brief with a recommended action for
+each finding.
 
-Runs on the AWS free tier. Built and documented in public.
+The brief is generated from a template, not by a model. This file said "an AI
+executive brief" until 29 September 2026, when someone read `build_brief` and
+found f-strings (IA-209).
+
+Runs on the AWS free tier. Built and documented in public, **including its own
+defects**: nine were found in this repository on a single day and are recorded
+as IA-199 to IA-206 and IA-209. What is fixed and what is not is set out under
+[What is not fixed](#what-is-not-fixed), rather than summarised in a number here
+that would drift.
 
 ## Why
 
@@ -30,18 +38,32 @@ problem FinOps addresses. This is a compact, safe, governance-first take on it.
 - **No inbound admin access.** Administration goes through AWS Systems Manager
   Session Manager. SSH is disabled by design — there is no port 22 and no key
   pair.
-- **Budget-conscious.** A zero-spend budget guards the account, with both ACTUAL
-  and FORECASTED notifications. It measures **gross** consumption
-  (`include_credit = false`) so promotional credits cannot hide real spend.
-- **Infrastructure as Code.** The whole stack is defined in Terraform and applied
-  plan-first: every change is previewed and approved before it touches the
-  account. See [`infra/README.md`](infra/README.md).
+- **Budget-aware, and it notifies rather than guards.** A zero-spend budget
+  sends ACTUAL and FORECASTED email notifications, measuring **gross**
+  consumption (`include_credit = false`) so promotional credits cannot hide
+  real spend. It has no power to stop, throttle or detach anything. This file
+  said it "guards the account" until IA-204, which is a claim about power the
+  resource does not have: the budget was breached by 343%, the emails were
+  delivered and read, and the spend continued for four weeks. Giving the
+  account a real brake was considered and declined, because an AWS Budgets
+  Action would put a role in the account that can stop instances, and the
+  strongest sentence this project can make is that it cannot change your
+  account. The condition for revisiting that decision is written on IA-204.
+- **Infrastructure as Code, with a stated reach.** Everything this project
+  manages is defined in Terraform and applied plan-first: every change is
+  previewed and approved before it touches the account. This file said "the
+  whole stack" until IA-199, which is a larger claim. A clean `terraform plan`
+  says the **managed** resources match the code; it is silent about anything
+  outside the state, and silence reads as absence. On 29 September 2026 the
+  account held one EC2 instance and two budgets that no plan declared, and no
+  run of `terraform plan` could have reported them, however often it was run.
+  See [`infra/README.md`](infra/README.md).
 
 ## Architecture
 
 | Piece | Role |
 |---|---|
-| **Terraform** (`infra/`) | Defines the entire stack. Provider pinned via a versioned `.terraform.lock.hcl`. |
+| **Terraform** (`infra/`) | Defines everything this project manages, and a clean plan speaks only about those resources. Provider pinned via a versioned `.terraform.lock.hcl`. |
 | **EC2 t3.micro** | Runs `guardian.py` on a schedule. Encrypted gp3 root volume, IMDSv2 required. |
 | **IAM read-only role** | An enumerated read set, plus a `NotAction` Deny on everything outside it. Attached by instance profile. |
 | **Cost Explorer API** | Month-to-date and forecast spend. |
@@ -156,22 +178,98 @@ in your own region, operator IP and alert email — `terraform.tfvars` is
 gitignored on purpose and is never published. Then `terraform init`, `plan`,
 review, `apply`.
 
+## What is detected, and by which mechanism
+
+Stating the reach of a check beside the check is the practice this whole
+repository is an argument for.
+
+| Mechanism | Catches | Cannot catch |
+| --- | --- | --- |
+| `idle_instances` | running instances under 5% average CPU | anything that is stopped |
+| `orphan_volumes` | volumes attached to nothing | volumes that are attached |
+| `idle_attached_volumes` | volumes on instances stopped over 7 days | volumes on running instances |
+| `unused_ips` | Elastic IPs with no association | associated addresses |
+| `undeclared_resources` | resources with no `ManagedBy=terraform` tag | a resource Terraform created and later lost from state, which keeps its tags |
+| `terraform plan` | drift in the resources the state lists | anything outside the state |
+
+The first three lines exist because of IA-200: before `idle_attached_volumes`,
+a stopped instance with an attached volume fell between "not running, so not
+idle EC2" and "attached, so not an orphan", and billed every hour while both
+other detectors reported nothing.
+
+The last two lines are the open one. Neither can see a resource Terraform
+created and then lost from state. The check that would is IA-210.
+
+## The invariant suite
+
+```
+python test_invariants.py     ->  all 41 invariants hold
+```
+
+No credentials, no network, no account, no spend. `boto3` is stood in for when
+it is absent, and the stand-in raises if any test ever calls it.
+
+Until 29 September 2026 this repository had no test of any kind, and CI ran
+`py_compile` on two files and printed a tick (IA-205). Every defect found that
+day compiles cleanly, so the tick was never evidence of anything.
+
+The suite is written as statements of what the Guardian **must** do rather than
+as a description of what it does. It was committed red, reproducing eight
+defects in one command, and turned green by fixing them.
+
+**The fakes refuse rather than ignore.** Both broken detectors were broken in
+their *filter*, so a fake that returned everything regardless would have made
+them look correct. `fakes.py` implements filter semantics and raises
+`UnsupportedFilter` on a filter it does not model. The Cost Explorer fake models
+credits as separate records, because gross against net was the whole of IA-202.
+Five invariants are controls on the fakes themselves: if the fakes are wrong,
+nothing else in the file means anything.
+
+**The fixture is the account.** `account_as_of_2026_09_29()` matches
+`describe-instances` and `describe-volumes` tag for tag, checked against the
+live account the same day.
+
+### What a green suite does not mean
+
+It means the logic behaves as specified against fixtures. It does not mean the
+account behaves as the fixtures describe. Confirming runs against the live
+account are tracked on their issues and are not claimed here as done.
+
 ## Roadmap
 
 - ✅ Phase 0 — Account, budget guard, IAM, CLI, repository
 - ✅ Phase 1 — EC2 + read-only IAM role, administered through SSM Session Manager
 - ✅ Phase 2 — End-of-month spend forecast via Cost Explorer
 - ✅ Phase 3 — Waste detection (idle EC2, orphaned EBS, unused EIP)
-- ✅ Phase 4 — AI executive brief and dashboard
+- ✅ Phase 4 — Templated executive brief and dashboard (called an AI brief here until IA-209)
 - ✅ Phase 5 — CI/CD automation and scheduling
 - ✅ Phase 6 — **Infrastructure as Code**: the stack rebuilt in Terraform, applied plan-first
 - ✅ Phase 7 — **The read-only guarantee rewritten and proven**: `NotAction` Deny in place of thirteen named actions, verified at runtime from inside the account
+- ✅ Phase 8 — **An invariant suite, and CI that runs it**: 41 invariants, five of them controls, committed red and turned green
+- ⬜ Phase 9 — A CI check comparing Terraform state against the account (IA-210)
+- ⬜ Phase 10 — A budget alert that names the resources, the amount and one action, and escalates when it repeats (IA-211)
+- ⬜ Phase 11 — `prove_it_can_fail.py`: break the code on purpose and require the invariants that should catch each break to be the ones that do
 
 ## Status
 
-**v1 complete.** The stack is defined in code, reviewed before every change,
-public, and the safety claim is verified from the account rather than asserted
-in this file.
+The stack is defined in code, reviewed before every change, public, and the
+safety claim is verified from the account rather than asserted in this file.
+
+This section said **"v1 complete"** until IA-209. Nine defects were recorded
+against this repository on 29 September 2026, and "complete" is not a word that
+survives that. A reader takes it to mean nothing known is outstanding.
+
+### What is not fixed
+
+| | |
+| --- | --- |
+| IA-199 | `i-0318219b00fc4df65` is still in the account and still outside the state. Its root volume bills. Snapshot before anything is terminated: `DeleteOnTermination` is true on all four root volumes. |
+| IA-202 | The forecast fix is verified against a fixture. The pair of `get-cost-and-usage` calls against the live account has not been run, so the half of that defect the fixture assumes is still assumed. |
+| IA-204 | The budget notifies and does not act. That is a decision, recorded with the condition for revisiting it, not an omission. |
+| IA-210 | Nothing compares the Terraform state against the account. |
+| IA-211 | The alert is still a percentage, with no resource, no amount and no action. |
+| Phase 11 | The suite has never been proven able to fail systematically. Ad hoc probes during the fix found one guard with no invariant behind it, which is what a real mutation harness would find without being asked. |
+| | No second person has followed this repository's runbook on a machine that is not the author's. |
 
 ## Related project
 

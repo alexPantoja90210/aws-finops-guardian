@@ -132,13 +132,57 @@ real account are still open, both recorded on their issues: the pair of
 `get-cost-and-usage` calls on IA-202, and a real run of the Guardian once the
 `ManagedBy` tag exists.
 
-## Slice 3: the claims, and the account
+## Slice 3: the claims  (done)
 
-- The README sentences that IA-199 and IA-204 are about.
-- The decision on actuation from IA-204, written down whichever way it goes.
-- `terraform import` or destroy-by-plan for the untracked instance.
-- Snapshot before anything is terminated: `DeleteOnTermination` is true on all
-  four root volumes.
+**The Terraform work turned out not to exist.** `ManagedBy = "terraform"` has
+been set since IA-7 as `default_tags` on both `provider "aws"` blocks. It was
+planned here because the plan was written before `infra/versions.tf` was read.
+
+Three predictions were registered before checking the account and all three
+failed, recorded on IA-199. The one that mattered: `i-0318219b00fc4df65` was
+expected to carry the tag, which would have made the IA-199 detector
+inadequate. It carries none, and the detector finds exactly the right two
+resources on the live account.
+
+What the slice actually was:
+
+| Claim, before | Issue | Claim, after |
+| --- | --- | --- |
+| "a zero-spend budget **guards** the account" | IA-204 | it notifies, it has no power to stop anything, and the brake was declined for a written reason |
+| "**the whole stack** is defined in Terraform" | IA-199 | everything this project manages, and a clean plan is silent about the rest |
+| "produces an **AI** executive brief" | IA-209 | generated from a template. `build_brief` is f-strings and there is no model in the repository |
+| "**v1 complete**" | IA-209 | what is complete, and a table of what is not |
+
+Plus two sections the README did not have: **what is detected and by which
+mechanism**, with a column for what each mechanism *cannot* catch, and **the
+invariant suite**, which is now the repository's main piece of evidence and
+went unmentioned.
+
+### The decision recorded on IA-204
+
+Notify-only. An AWS Budgets Action would give the account a real brake and was
+declined: it puts a role in the account that can stop instances, and the
+strongest sentence this project can make is that it cannot change your account.
+The saving at stake is 2.56 USD a month.
+
+**That decision carries a condition for revisiting it**, because a decision
+without one is just a thing that gets forgotten: when the account holds any
+resource outside the free tier, or when the gross forecast exceeds the budget
+by more than an agreed multiple.
+
+The failure was never the missing brake. It was an alert that repeated
+identically with no resource, no amount and no action. That is IA-211, and it
+is the part that would actually have changed the outcome.
+
+### Raised during the slice
+
+- **IA-209**, the two README claims above, under rule 2 rather than corrected
+  in silence. Fixing them quietly would have reduced the defect count by the
+  two most uncomfortable instances in the set, which is the bias rule 2 exists
+  to prevent.
+- **IA-210**, the CI check comparing state against the account, for the drift
+  the tag structurally cannot catch.
+- **IA-211**, the alert redesign.
 
 ## Slice 4: mutations
 
