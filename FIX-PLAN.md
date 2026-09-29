@@ -4,7 +4,7 @@ Six defects were found on 29 September 2026 and recorded as IA-199 to IA-204.
 This file says how they get closed and in what order, so that the order is a
 decision on the record rather than whatever happened first.
 
-## Slice 1: an invariant suite, written before the fixes
+## Slice 1: an invariant suite, written before the fixes  (done, 3871774)
 
 `test_invariants.py` and `fakes.py`.
 
@@ -79,16 +79,58 @@ The workflow now runs the suite, and therefore fails. That is the correct
 state. The repository contains six recorded, reproduced, unfixed defects, and
 a green badge over them would be exactly the defect the portfolio is about.
 
-## Slice 2: make it green
+## Slice 2: make it green  (done)
 
-In this order, because each one is a prerequisite for trusting the next.
+`all 41 invariants hold`. Nine were added during the slice, for the detector
+list and for the dashboard, which is the last place an absence could still be
+painted as a zero.
 
-1. **IA-202**, the cost view. Everything downstream reads this number.
-2. **IA-203**, the threshold, read from the budget rather than restated.
-3. **IA-201**, identity from IMDSv2 rather than a Name tag.
-4. **IA-200**, the third detector: EBS attached to a long-stopped instance.
-5. **IA-199**, the fourth detector: resources with no `ManagedBy` tag, plus
-   the tag itself in Terraform.
+| Issue | What changed |
+| --- | --- |
+| IA-202 | `forecast()` sends a `RECORD_TYPE` filter excluding Credit and Refund, and returns `cost_view` naming what it measured. The report and the page print it. |
+| IA-203 | `BUDGET = 5.00` is gone. The limit is read from the budget by name. When it cannot be read there is no verdict, and the reason says which budgets were seen. |
+| IA-206 | A third verdict, `UNKNOWN`. A missing measurement is never rendered as a zero and never as OK, in the terminal report or on the page. |
+| IA-201 | Identity comes from the IMDSv2 instance-identity document, which also supplies the account id, so neither needs an IAM permission the role lacks. `SELF_NAME` is gone. With no identity, nothing is excluded and the report says so. |
+| IA-200 | `idle_attached_volumes()`: volumes on instances stopped longer than seven days. An instance whose stop time AWS does not report is included with the duration stated as unknown, rather than skipped. |
+| IA-199 | `undeclared_resources()`: instances and volumes with no `ManagedBy=terraform` tag, reported in their own section because they are not waste. The tag itself is still to be added in Terraform, slice 3. |
+
+`budgets:DescribeBudgets` and `sts:GetCallerIdentity` were already in both the
+Allow and the `NotAction` Deny, so this slice needed no change to the IAM
+policy and the read-only guarantee is untouched.
+
+### On the fixture account, the Guardian now says
+
+```
+Forecast   MTD $3.44   EOM $3.56   Budget $1.00   [OVER]
+Cost view  gross (RECORD_TYPE Credit and Refund excluded)
+
+WASTE FOUND: 4 item(s)  ->  $2.56/mo on the floor
+UNDECLARED: 2 resource(s) with no ManagedBy=terraform tag
+Health score: 55/100
+```
+
+against `MTD $0.00 ... [OK]` and `Clean account.` before.
+
+### One defect committed inside the fix, and caught
+
+`money(None)` was given a guard so an unreadable figure would render as
+`unknown`. Probing the suite by breaking that guard on purpose left all forty
+invariants green: no other invariant reached the branch, because the UNKNOWN
+path never calls it. **A guard with nothing that would notice its removal is
+an instruction with no mechanism**, which is the defect this repository is
+about, committed in the middle of fixing it.
+
+It was found by probing rather than by reading, which is the argument for
+slice 4 in one paragraph. An invariant now covers it, and asserts that
+`None` and `0` render differently.
+
+### What a green suite here does and does not mean
+
+It means the logic behaves as specified against fixtures. It does not mean
+the account behaves as the fixtures describe. Two confirming runs against the
+real account are still open, both recorded on their issues: the pair of
+`get-cost-and-usage` calls on IA-202, and a real run of the Guardian once the
+`ManagedBy` tag exists.
 
 ## Slice 3: the claims, and the account
 
@@ -104,5 +146,6 @@ In this order, because each one is a prerequisite for trusting the next.
 purpose in a throwaway copy, require the suite to go red, and require the
 invariants that should catch each break to be the ones that do.
 
-Not before slice 2. There is no point proving a suite can fail while sixteen
-of its invariants are already failing.
+Not before slice 2, and slice 2 is done, so this is now the next thing worth
+doing. The ad hoc probes run during slice 2 already found one untested guard,
+which is what a real harness would do systematically instead of by hand.

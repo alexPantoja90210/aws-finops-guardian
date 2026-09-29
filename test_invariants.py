@@ -429,6 +429,108 @@ check("a Cost Explorer outage does not produce an OK verdict",
       _outage_is_not_an_ok_verdict)
 
 
+
+# ==========================================================================
+# The detector list, and the dashboard that renders what the Guardian found.
+# The dashboard is the last place an absence could still be painted as a zero.
+# ==========================================================================
+
+import dashboard  # noqa: E402
+
+
+def _report(fc, waste=(), undeclared=(), examined=("something",)):
+    return {"generated_at": "2026-09-29T12:00:00+00:00", "forecast": fc,
+            "waste": list(waste), "undeclared": list(undeclared),
+            "waste_monthly_usd": round(sum(w["est_monthly_usd"] for w in waste), 2),
+            "health_score": 80, "self_instance_id": GUARDIAN_ID,
+            "examined": list(examined)}
+
+
+def _unknown_forecast():
+    with frozen(TODAY):
+        return guardian.forecast(september_cost_explorer(), budgets=None)
+
+
+def _every_declared_detector_exists():
+    return all(callable(getattr(guardian, name, None))
+               for name, _ in guardian.DETECTORS)
+
+
+def _examined_has_one_entry_per_detector():
+    return len(guardian.examined()) == len(guardian.DETECTORS)
+
+
+def _unknown_renders_without_raising():
+    html = dashboard.render(_report(_unknown_forecast()))
+    return isinstance(html, str) and len(html) > 0
+
+
+def _unknown_is_not_rendered_as_a_figure():
+    fc = _unknown_forecast()
+    html = dashboard.render(_report(fc))
+    # The budget could not be read, so no budget figure may appear, and the
+    # tile must not be painted green.
+    return "$0.00 budget" not in html and "class='v g'>UNKNOWN" not in html
+
+
+def _unknown_brief_gives_no_verdict():
+    html = dashboard.render(_report(_unknown_forecast()))
+    return "no spend verdict can be given" in html
+
+
+def _empty_findings_say_what_was_examined():
+    with frozen(TODAY):
+        fc = guardian.forecast(september_cost_explorer(), budgets=september_budgets())
+    html = dashboard.render(_report(fc, examined=["volumes attached to nothing"]))
+    return "volumes attached to nothing" in html
+
+
+def _undeclared_reach_the_page():
+    ec2 = account_as_of_2026_09_29()
+    und = guardian.undeclared_resources(ec2)
+    with frozen(TODAY):
+        fc = guardian.forecast(september_cost_explorer(), budgets=september_budgets())
+    html = dashboard.render(_report(fc, undeclared=und))
+    return UNTRACKED_ID in html
+
+
+def _page_states_the_cost_view():
+    with frozen(TODAY):
+        fc = guardian.forecast(september_cost_explorer(), budgets=september_budgets())
+    html = dashboard.render(_report(fc))
+    return fc["cost_view"] in html
+
+
+def _money_distinguishes_absent_from_zero():
+    """Found by probing: the guard in money() had no invariant behind it.
+
+    Breaking it on purpose left the suite green, because no other invariant
+    reached that branch. A guard with nothing that would notice its removal
+    is an instruction with no mechanism, which is the defect this repository
+    is about, committed here in the fix for it.
+    """
+    return dashboard.money(None) == "unknown" and dashboard.money(0) == "$0.00"
+
+
+check("a figure that could not be read renders as unknown, and not as zero",
+      _money_distinguishes_absent_from_zero)
+check("every detector named in DETECTORS exists as a function",
+      _every_declared_detector_exists)
+check("the examined list has one entry per detector",
+      _examined_has_one_entry_per_detector)
+check("a report with no verdict renders without raising",
+      _unknown_renders_without_raising)
+check("a budget that could not be read is not painted as a figure or as green",
+      _unknown_is_not_rendered_as_a_figure)
+check("the brief for an unreadable month gives no verdict", _unknown_brief_gives_no_verdict)
+check("a page with no findings says what was examined",
+      _empty_findings_say_what_was_examined)
+check("undeclared resources reach the page, since a clean plan cannot report them",
+      _undeclared_reach_the_page)
+check("the page states the cost view the figures were measured on",
+      _page_states_the_cost_view)
+
+
 # ==========================================================================
 
 if BOTO3_STUBBED:

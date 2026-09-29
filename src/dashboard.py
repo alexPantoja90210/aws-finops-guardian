@@ -36,6 +36,13 @@ td{padding:12px;border-bottom:1px solid rgba(255,255,255,.05);font-family:ui-mon
 """
 
 def money(x):
+    """A figure that could not be read is rendered as such, never as 0.00.
+
+    IA-206: an absence rendered as a zero is the defect. The dashboard is the
+    last place it could still happen after the Guardian stopped doing it.
+    """
+    if x is None:
+        return "unknown"
     return f"${x:,.2f}"
 
 def build_brief(r):
@@ -44,24 +51,35 @@ def build_brief(r):
     total = r["waste_monthly_usd"]
     health = r["health_score"]
     p = []
-    p.append(f"As of {r['generated_at'][:10]}, projected month-end spend is {money(fc['projected_eom'])} against a {money(fc['budget'])} budget ({fc['status']}).")
+    if fc["status"] == "UNKNOWN":
+        p.append(f"As of {r['generated_at'][:10]}, no spend verdict can be given. "
+                 f"{fc.get('note') or 'One of the two figures a verdict needs could not be read.'}")
+    else:
+        p.append(f"As of {r['generated_at'][:10]}, projected month-end spend is "
+                 f"{money(fc['projected_eom'])} against a {money(fc['budget'])} budget "
+                 f"({fc['status']}), measured {fc.get('cost_view', 'on an unstated cost view')}.")
     if waste:
         p.append(f"The account is carrying {len(waste)} unused or idle resource(s) costing an estimated {money(total)} per month.")
         top = sorted(waste, key=lambda w: w['est_monthly_usd'], reverse=True)[0]
         p.append(f"The biggest single item is {top['type'].replace('_',' ')} ({top['resource']}) at ~{money(top['est_monthly_usd'])}/mo - recommended action: {top['action'].lower()}.")
     else:
-        p.append("No idle or orphaned resources were detected - the account is clean.")
+        looked = r.get("examined") or []
+        p.append("No idle or orphaned resources were detected. What was examined: "
+                 + ("; ".join(looked) if looked else
+                    "the report does not say, which is itself a defect.") + ".")
+    und = r.get("undeclared") or []
+    if und:
+        p.append(f"{len(und)} resource(s) in the account carry no ManagedBy tag, "
+                 "so no plan declares them and no clean terraform plan can report them.")
     p.append(f"Overall governance health score: {health}/100.")
     return " ".join(p)
 
-def main():
-    with open("report.json") as f:
-        r = json.load(f)
+def render(r):
     fc = r["forecast"]
     waste = r["waste"]
     total = r["waste_monthly_usd"]
     health = r["health_score"]
-    budget_cls = "g" if fc["status"] == "OK" else "r"
+    budget_cls = {"OK": "g", "OVER": "r"}.get(fc["status"], "a")
     waste_cls = "g" if total == 0 else "a"
     health_cls = "g" if health >= 90 else ("a" if health >= 70 else "r")
     updated = r["generated_at"][:16].replace("T", " ")
@@ -97,13 +115,39 @@ def main():
             h.append(f"<tr><td><span class='badge a'>{typ}</span></td><td>{w['resource']}</td><td>{w['detail']}</td><td>{money(w['est_monthly_usd'])}</td><td>{w['action']}</td></tr>")
         h.append("</table>")
     else:
-        h.append("<div class='clean'>&#10003; No findings - all clear.</div>")
+        looked = r.get("examined") or []
+        h.append("<div class='clean'>&#10003; No findings.</div>")
+        h.append("<div style='margin-top:10px;color:#8394ab;font-size:13px'>Examined: "
+                 + ("; ".join(looked) if looked else "not stated") + ".</div>")
+    h.append("</div>")
+    und = r.get("undeclared") or []
+    h.append("<div class='card'><h2>Undeclared - no ManagedBy tag</h2>")
+    if und:
+        h.append("<table><tr><th>Type</th><th>Resource</th><th>Detail</th><th>Action</th></tr>")
+        for u in und:
+            typ = u["type"].replace("_", " ")
+            h.append(f"<tr><td><span class='badge a'>{typ}</span></td><td>{u['resource']}</td>"
+                     f"<td>{u['detail']}</td><td>{u['action']}</td></tr>")
+        h.append("</table>")
+        h.append("<div style='margin-top:12px;color:#8394ab;font-size:13px'>"
+                 "A clean <code>terraform plan</code> cannot report these. A diff only "
+                 "speaks about what it compares, so it is silent about anything outside "
+                 "the state, and silence reads as absence. The tag is a convention, so "
+                 "this catches accidents and forgetting, not concealment.</div>")
+    else:
+        h.append("<div class='clean'>&#10003; Every instance and volume is declared.</div>")
     h.append("</div>")
     h.append("<div class='foot'>Read-only &middot; authenticated by EC2 IAM role &middot; no keys on host</div>")
     h.append("</div></body></html>")
 
+    return "".join(h)
+
+
+def main():
+    with open("report.json") as f:
+        r = json.load(f)
     with open("dashboard.html", "w") as f:
-        f.write("".join(h))
+        f.write(render(r))
     print("Wrote dashboard.html")
 
 if __name__ == "__main__":
