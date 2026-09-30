@@ -184,6 +184,27 @@ is the part that would actually have changed the outcome.
   the tag structurally cannot catch.
 - **IA-211**, the alert redesign.
 
+## Slice 3b: the claim that the whole file was making  (done)
+
+Raised as IA-213 after slices 1 to 3 had shipped, which is worth noting: the
+three slices above corrected sentences inside a document whose overall claim
+was false. Every individual statement could have been made true and the file
+would still have described a service that does not exist.
+
+`guardian.py` is not on the instance, `boto3` is not installed there, nothing
+schedules it, no `report.json` has ever existed on it, nginx is `inactive`, and
+Cost Explorer counted 12 API requests in August and 2 in September against the
+~30 a month a daily run would make. August had 3.07 EC2 compute hours in total.
+
+The README now leads with it, carries an **Is it deployed** section with the
+evidence, splits Phase 5 into CI (done) and scheduling (never built), and marks
+Phases 2, 3 and 4 as written and tested rather than running.
+
+**Phase 12 was added and is a precondition for any deployment work.** A
+liveness check that refuses stale output. Deploying without it would recreate
+IA-213 in a different shape: something would run once, stop, and nothing would
+say so.
+
 ## Slice 4: mutations
 
 `prove_it_can_fail.py`, in the shape the local RAG lab uses: break the code on

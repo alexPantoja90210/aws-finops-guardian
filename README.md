@@ -1,9 +1,17 @@
 # AWS FinOps Guardian
 
-A read-only cloud service that watches an AWS account, forecasts the end-of-month
-bill on **gross** consumption, reports idle and undeclared resources, scores
-account health, and produces a dollar-ranked brief with a recommended action for
-each finding.
+A read-only FinOps tool for an AWS account. It forecasts the end-of-month bill
+on **gross** consumption, reports idle and undeclared resources, scores account
+health, and produces a dollar-ranked brief with a recommended action for each
+finding.
+
+> **It is not running.** The Terraform stack is applied and its read-only
+> guarantee is verified from inside the account. The Python is tested against
+> 41 invariants. The two have never been connected: `guardian.py` is not on the
+> instance, its dependency is not installed there, nothing schedules it, and
+> Cost Explorer records 12 API requests in August and 2 in September against
+> the ~30 a month a daily run would make. This file described a running service
+> until 29 September 2026. See [Is it deployed](#is-it-deployed) (IA-213).
 
 The brief is generated from a template, not by a model. This file said "an AI
 executive brief" until 29 September 2026, when someone read `build_brief` and
@@ -64,14 +72,14 @@ problem FinOps addresses. This is a compact, safe, governance-first take on it.
 | Piece | Role |
 |---|---|
 | **Terraform** (`infra/`) | Defines everything this project manages, and a clean plan speaks only about those resources. Provider pinned via a versioned `.terraform.lock.hcl`. |
-| **EC2 t3.micro** | Runs `guardian.py` on a schedule. Encrypted gp3 root volume, IMDSv2 required. |
+| **EC2 t3.micro** | **Provisioned and empty.** Intended to run `guardian.py` on a schedule; today it holds neither the program nor `boto3`. Encrypted gp3 root volume, IMDSv2 required. See [Is it deployed](#is-it-deployed). |
 | **IAM read-only role** | An enumerated read set, plus a `NotAction` Deny on everything outside it. Attached by instance profile. |
 | **Cost Explorer API** | Month-to-date and forecast spend. |
 | **CloudWatch** | CPU metrics used to flag idle instances. |
 | **EC2 API** | Resource inventory for orphaned volumes and unused IPs. |
 | **AWS Budgets** | Zero-spend guard, credit-blind by configuration. |
 | **SSM Session Manager** | Administrative access, without opening a port. |
-| **nginx** | Serves the dashboard. |
+| **nginx** | Intended to serve the dashboard. Reports `inactive`, and no dashboard has ever been generated on the instance. |
 | **GitHub Actions** | Deployment automation. |
 
 ## The read-only policy, as the code implements it
@@ -235,29 +243,80 @@ It means the logic behaves as specified against fixtures. It does not mean the
 account behaves as the fixtures describe. Confirming runs against the live
 account are tracked on their issues and are not claimed here as done.
 
+## Is it deployed
+
+**No.** Written down here rather than left to be discovered, because for six
+weeks this file said otherwise.
+
+A read-only probe of the instance under SSM on 29 September 2026, plus two
+queries against the account's own billing:
+
+| Checked | Result |
+| --- | --- |
+| `guardian.py` anywhere on the instance | not present |
+| `boto3`, its only dependency, any interpreter or venv | not installed, and no copy on disk |
+| `crontab` | not installed |
+| systemd timers | seven, all stock system units, none for the Guardian |
+| `report.json` or `dashboard.html`, ever | neither has ever existed there |
+| `nginx` | `inactive` |
+| Cost Explorer API requests, August 2026 | **12** |
+| Cost Explorer API requests, September 2026 | **2** |
+| EC2 compute hours, August 2026 | **3.07** |
+
+The last three matter most, because they do not depend on which instance is
+examined. A forecast cannot be produced without calling `get_cost_and_usage`,
+and Cost Explorer counts every request. A daily run needs about thirty a month.
+Twelve is what a handful of development sessions looks like, and the machine was
+powered on for three hours in the whole of August.
+
+**What is real, so the correction does not overshoot.** The Terraform stack
+plans and applies and matches its state. The `NotAction` Deny exists and the
+11/11 mutations-denied run is genuine evidence, because `verify_readonly.sh` is
+bash against the preinstalled AWS CLI, which is precisely why it runs on a box
+where Python cannot. IMDSv2, no SSH and SSM-only administration are all true of
+the managed instance. The Python is correct and tested.
+
+The accurate sentence is that this project is **a verified piece of
+infrastructure and a tested program that have never been connected to each
+other.** Smaller than this file used to claim, and much larger than nothing.
+
+### Why none of the checks caught it
+
+`terraform plan` proves the infrastructure matches the code, and it does.
+`verify_readonly.sh` proves the role cannot mutate, and it cannot. The invariant
+suite proves the Python behaves as specified, and it does. **Not one of them
+asks whether the program is on the machine and running.** Three correct
+mechanisms, and the product lived in the space between them.
+
+Phase 12 is the check that closes it.
+
 ## Roadmap
 
 - ✅ Phase 0 — Account, budget guard, IAM, CLI, repository
 - ✅ Phase 1 — EC2 + read-only IAM role, administered through SSM Session Manager
-- ✅ Phase 2 — End-of-month spend forecast via Cost Explorer
-- ✅ Phase 3 — Waste detection (idle EC2, orphaned EBS, unused EIP)
-- ✅ Phase 4 — Templated executive brief and dashboard (called an AI brief here until IA-209)
-- ✅ Phase 5 — CI/CD automation and scheduling
+- ✅ Phase 2 — End-of-month spend forecast via Cost Explorer, **written and tested. Not deployed** (IA-213)
+- ✅ Phase 3 — Waste detection, **written and tested. Not deployed** (IA-213)
+- ✅ Phase 4 — Templated executive brief and dashboard, **written and tested. Never generated on the instance** (IA-213). Called an AI brief here until IA-209
+- ✅ Phase 5 — CI in GitHub Actions
+- ⬜ Phase 5b — **Scheduling on the instance. Never built** (IA-213)
 - ✅ Phase 6 — **Infrastructure as Code**: the stack rebuilt in Terraform, applied plan-first
 - ✅ Phase 7 — **The read-only guarantee rewritten and proven**: `NotAction` Deny in place of thirteen named actions, verified at runtime from inside the account
 - ✅ Phase 8 — **An invariant suite, and CI that runs it**: 41 invariants, five of them controls, committed red and turned green
 - ⬜ Phase 9 — A CI check comparing Terraform state against the account (IA-210)
 - ⬜ Phase 10 — A budget alert that names the resources, the amount and one action, and escalates when it repeats (IA-211)
-- ⬜ Phase 11 — `prove_it_can_fail.py`: break the code on purpose and require the invariants that should catch each break to be the ones that do
+- ⬜ Phase 11 — `prove_it_can_fail.py`: break the code on purpose and require the invariants that should catch each break to be the ones that do (IA-214)
+- ⬜ Phase 12 — **A liveness check**: `report.json` carries `generated_at`, so anything reading it can refuse when it is stale and say so. Without this, a deployment would recreate IA-213 in a different shape
 
 ## Status
 
-The stack is defined in code, reviewed before every change, public, and the
-safety claim is verified from the account rather than asserted in this file.
+**Not deployed.** The stack is defined in code, reviewed before every change,
+public, and the safety claim is verified from the account rather than asserted
+in this file. The program that stack exists to run has never run on it.
 
-This section said **"v1 complete"** until IA-209. Nine defects were recorded
-against this repository on 29 September 2026, and "complete" is not a word that
-survives that. A reader takes it to mean nothing known is outstanding.
+This section said **"v1 complete"** until IA-209, and the whole file described a
+live service until IA-213. Ten defects were recorded against this repository on
+29 September 2026, and "complete" is not a word that survives that. A reader
+takes it to mean nothing known is outstanding.
 
 ### What is not fixed
 
@@ -268,6 +327,8 @@ survives that. A reader takes it to mean nothing known is outstanding.
 | IA-204 | The budget notifies and does not act. That is a decision, recorded with the condition for revisiting it, not an omission. |
 | IA-210 | Nothing compares the Terraform state against the account. |
 | IA-211 | The alert is still a percentage, with no resource, no amount and no action. |
+| IA-213 | **The Guardian has never run.** Four roadmap phases and two architecture rows described a service that was never deployed. The claims are corrected above; the deployment itself is not done, and must not be done without Phase 12. |
+| IA-215 | An IAM role and instance profile outside Terraform carry `ReadOnlyAccess` with no Deny. `undeclared_resources()` sees neither: it enumerates instances and volumes only. |
 | Phase 11 | The suite has never been proven able to fail systematically. Ad hoc probes during the fix found one guard with no invariant behind it, which is what a real mutation harness would find without being asked. |
 | | No second person has followed this repository's runbook on a machine that is not the author's. |
 
