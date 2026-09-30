@@ -205,12 +205,54 @@ liveness check that refuses stale output. Deploying without it would recreate
 IA-213 in a different shape: something would run once, stop, and nothing would
 say so.
 
-## Slice 4: mutations
+## Slice 4: mutations  (done)
 
-`prove_it_can_fail.py`, in the shape the local RAG lab uses: break the code on
-purpose in a throwaway copy, require the suite to go red, and require the
-invariants that should catch each break to be the ones that do.
+```
+python prove_it_can_fail.py   ->  all 11 mutations were caught
+```
 
-Not before slice 2, and slice 2 is done, so this is now the next thing worth
-doing. The ad hoc probes run during slice 2 already found one untested guard,
-which is what a real harness would do systematically instead of by hand.
+Eleven, one per defect fixed in slices 2 and 3, each naming the invariants that
+must go red for it. A mutation that reddens the suite for an unrelated reason
+proves nothing.
+
+One targets `fakes.py` rather than the product. If the fakes stop refusing
+filters they do not model, several invariants keep passing while testing
+nothing, so a broken fake has to be caught too.
+
+### The harness has two controls of its own
+
+The argument that a suite seen only passing might be unable to fail applies to
+the harness as much as to the suite. Both were run deliberately before
+committing:
+
+- **A moved anchor.** The `money()` anchor was altered on purpose. The harness
+  printed `SKIP  the anchor has moved, so this proves nothing` and exited
+  non-zero, rather than passing quietly on a rule it had not tested.
+- **A mutation that changes nothing.** A planted mutation editing only a
+  comment produced `the suite stayed green` and exit 1. The harness reports its
+  own failure to prove anything.
+
+### Three invariants the harness forced into existence
+
+Written before it ran, because three mutations had nothing to catch them:
+
+- an instance whose stop time AWS does not report is still reported, with the
+  duration stated as unknown
+- the undeclared **volume**, as distinct from the undeclared instance
+- a canary on the detector count, labelled a canary in its own docstring
+  because nothing here can prove `DETECTORS` lists every detector without a
+  second list to compare against, which is the defect IA-203 was about
+
+44 invariants now, from 41.
+
+### CI
+
+The workflow runs the harness after the suite. After, not before: proving a
+suite can fail while it is already failing proves nothing. The whole run takes
+about a second, because nothing here touches a network or an account.
+
+## What is left
+
+Nothing in this plan. What remains is on its own issues: IA-199's instance,
+IA-209's acceptance, IA-210, IA-211, IA-213's deployment (blocked on Phase 12,
+the liveness check) and IA-215.

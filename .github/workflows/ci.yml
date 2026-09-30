@@ -29,3 +29,11 @@ jobs:
       # badge over them would be the defect this project exists to find.
       - name: Invariants
         run: python test_invariants.py
+
+      # A suite that has only ever been seen passing is indistinguishable from
+      # one that cannot fail. This breaks the code on purpose eleven ways and
+      # requires the invariants that should catch each break to be the ones
+      # that do. It runs after the suite, because proving a suite can fail
+      # while it is already failing proves nothing.
+      - name: Mutations
+        run: python prove_it_can_fail.py

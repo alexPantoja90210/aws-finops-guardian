@@ -293,9 +293,31 @@ check("all four of the account's idle volumes are reported, one item each",
 check("the waste total for that account is 2.56 a month", _waste_total_is_2_56)
 check("the account of 29 September 2026 does not report as clean",
       _account_does_not_report_clean)
+def _unknown_stop_time_still_reported():
+    """A detector that drops what it cannot parse is a detector that quietly
+    misses things. AWS does not always fill StateTransitionReason."""
+    ec2 = FakeEC2(
+        instances=[instance("i-mute", state="stopped", name="x",
+                            volumes=["vol-mute"])],
+        volumes=[volume("vol-mute", attached_to="i-mute")])
+    out = guardian.idle_attached_volumes(ec2, now=TODAY)
+    return len(out) == 1 and "does not say" in out[0]["detail"]
+
+
+def _undeclared_covers_volumes_too():
+    ec2 = account_as_of_2026_09_29()
+    found = {w["resource"] for w in guardian.undeclared_resources(ec2)}
+    return "vol-0218c95fdf637ff4b" in found
+
+
 check("a volume attached to a running instance is not reported "
       "(becomes a control once the detector exists)",
       _running_instances_volume_not_flagged)
+check("an instance whose stop time AWS does not report is still reported, "
+      "with the duration stated as unknown",
+      _unknown_stop_time_still_reported)
+check("the undeclared volume is reported, not only the undeclared instance",
+      _undeclared_covers_volumes_too)
 
 
 # ==========================================================================
@@ -514,8 +536,22 @@ def _money_distinguishes_absent_from_zero():
 
 check("a figure that could not be read renders as unknown, and not as zero",
       _money_distinguishes_absent_from_zero)
+def _detector_count_is_stated():
+    """A canary, and it is labelled one rather than dressed as a proof.
+
+    Nothing here can prove DETECTORS lists every detector in the module; that
+    would need a second list to compare against, which is the defect IA-203
+    was about. What this does is fail when the number changes, so adding a
+    detector forces someone to decide whether to announce it. It catches
+    forgetting. It does not catch lying.
+    """
+    return len(guardian.DETECTORS) == 5
+
+
 check("every detector named in DETECTORS exists as a function",
       _every_declared_detector_exists)
+check("the detector count is 5 (a canary, not a proof: see the docstring)",
+      _detector_count_is_stated)
 check("the examined list has one entry per detector",
       _examined_has_one_entry_per_detector)
 check("a report with no verdict renders without raising",

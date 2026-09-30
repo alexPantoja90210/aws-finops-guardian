@@ -211,7 +211,8 @@ created and then lost from state. The check that would is IA-210.
 ## The invariant suite
 
 ```
-python test_invariants.py     ->  all 41 invariants hold
+python test_invariants.py     ->  all 44 invariants hold
+python prove_it_can_fail.py   ->  all 11 mutations were caught
 ```
 
 No credentials, no network, no account, no spend. `boto3` is stood in for when
@@ -236,6 +237,36 @@ nothing else in the file means anything.
 **The fixture is the account.** `account_as_of_2026_09_29()` matches
 `describe-instances` and `describe-volumes` tag for tag, checked against the
 live account the same day.
+
+### Passing is not the claim
+
+`prove_it_can_fail.py` copies the tree, breaks the code eleven ways, and checks
+that the suite goes red **and that the invariants which should catch each break
+are the ones that do**. A mutation that reddens the suite for an unrelated
+reason proves nothing, so each one names the invariants it expects.
+
+One mutation targets `fakes.py` rather than the product: if the fakes stop
+refusing filters they do not model, several invariants keep passing while
+testing nothing. A broken fake has to be caught too.
+
+**The harness has two controls of its own**, because the same argument applies
+to it. When an anchor no longer matches the source it prints
+`SKIP  the anchor has moved, so this proves nothing` and exits non-zero, rather
+than passing quietly on a rule it never tested. And planting a mutation that
+changes only a comment makes it report `the suite stayed green` and exit
+non-zero. Both were run deliberately before this was committed.
+
+**A word that now means two things in this file, said plainly rather than left
+to collide.** The read-only section reports *11/11 mutations denied*: those are
+AWS API calls attempted against the instance role, and denying them is the
+point. Here, *11 mutations caught* means deliberate edits to this repository's
+own source, and catching them is the point. Same word, opposite direction,
+unrelated elevens. The coincidence is accidental.
+
+Three invariants were added while writing it, for cases no mutation could reach
+because nothing covered them: an instance whose stop time AWS does not report,
+the undeclared *volume* as distinct from the undeclared instance, and a canary
+on the detector count. That is the harness doing its job before it ran.
 
 ### What a green suite does not mean
 
@@ -301,10 +332,10 @@ Phase 12 is the check that closes it.
 - ⬜ Phase 5b — **Scheduling on the instance. Never built** (IA-213)
 - ✅ Phase 6 — **Infrastructure as Code**: the stack rebuilt in Terraform, applied plan-first
 - ✅ Phase 7 — **The read-only guarantee rewritten and proven**: `NotAction` Deny in place of thirteen named actions, verified at runtime from inside the account
-- ✅ Phase 8 — **An invariant suite, and CI that runs it**: 41 invariants, five of them controls, committed red and turned green
+- ✅ Phase 8 — **An invariant suite, and CI that runs it**: 44 invariants, five of them controls, committed red and turned green
 - ⬜ Phase 9 — A CI check comparing Terraform state against the account (IA-210)
 - ⬜ Phase 10 — A budget alert that names the resources, the amount and one action, and escalates when it repeats (IA-211)
-- ⬜ Phase 11 — `prove_it_can_fail.py`: break the code on purpose and require the invariants that should catch each break to be the ones that do (IA-214)
+- ✅ Phase 11 — **`prove_it_can_fail.py`**: eleven mutations, each naming the invariants that must catch it, with two controls on the harness itself (IA-214)
 - ⬜ Phase 12 — **A liveness check**: `report.json` carries `generated_at`, so anything reading it can refuse when it is stale and say so. Without this, a deployment would recreate IA-213 in a different shape
 
 ## Status
@@ -329,7 +360,6 @@ takes it to mean nothing known is outstanding.
 | IA-211 | The alert is still a percentage, with no resource, no amount and no action. |
 | IA-213 | **The Guardian has never run.** Four roadmap phases and two architecture rows described a service that was never deployed. The claims are corrected above; the deployment itself is not done, and must not be done without Phase 12. |
 | IA-215 | An IAM role and instance profile outside Terraform carry `ReadOnlyAccess` with no Deny. `undeclared_resources()` sees neither: it enumerates instances and volumes only. |
-| Phase 11 | The suite has never been proven able to fail systematically. Ad hoc probes during the fix found one guard with no invariant behind it, which is what a real mutation harness would find without being asked. |
 | | No second person has followed this repository's runbook on a machine that is not the author's. |
 
 ## Related project
